@@ -1,6 +1,6 @@
 {
   "name": "kernox",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "Gabrel Fuente",
   "description": "Kernox is a simple javascript framework designed to build highly decoupled real-time applications. Inspired on the Entity-Component-System architecture, Kernox lets you define entities based on prototypes with multi-inheritance, allocated within collections and processed by specialized classes called Systems, which communicate using events dispatched by an event broker.",
   "keywords": [

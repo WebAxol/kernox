@@ -104,7 +104,7 @@ export class EntityFactory{
      * @param params Dictionary of custom parameters, with which an entity's matching attributes will be defined
      * @returns An entity of the given type built based on its prototype (and parameters if any)
      */
-    public create(type : string, params : object = {}) : Entity {
+    public create<T extends Entity = any>(type : string, params : object = {}) : T {
 
         const prototype : PrototypeSchema<any> | undefined = this.types.get(type) || this.resolveImplicitNamespace(type);
 
@@ -112,7 +112,7 @@ export class EntityFactory{
             throw Error(`Cannot create entity of null type '${type}'`);
         }
 
-        const entity : Entity = new Entity('' + this.nextID++, type);
+        const entity = new Entity('' + this.nextID++, type) as T;
 
         this.deepAssign(entity, prototype.attributes);
 

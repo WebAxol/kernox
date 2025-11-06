@@ -12,10 +12,10 @@ describe("ArrayList.iterate()", () => {
         const entity2 = new Entity("2","Dummy");
         const entity3 = new Entity("3","Dummy");
     
-        (collection as any).entities.add(entity0);
-        (collection as any).entities.add(entity1);
-        (collection as any).entities.add(entity2);
-        (collection as any).entities.add(entity3);
+        (collection as any).entities.push(entity0);
+        (collection as any).entities.push(entity1);
+        (collection as any).entities.push(entity2);
+        (collection as any).entities.push(entity3);
 
         for(const entity of collection){
             expect(entity).toBeInstanceOf(Entity);
