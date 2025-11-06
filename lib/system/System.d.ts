@@ -78,13 +78,13 @@ export declare class System {
      *    }
      * };
      */
-    protected dispatchEvent(eventName: string, details: object): void;
+    dispatchEvent(eventName: string, details: object): void;
     /**
      * Retrieves a collection to CollectionManager if found.
      * @param collectionName Name of collection
      * @returns an entitity collection or undefined
      */
-    protected getCollection<T extends AbstractCollection>(collectionName: string): T;
+    getCollection<T extends AbstractCollection = any>(collectionName: string): T;
     /**
      * @param resourceName Name of whatever it is being requested
      * @returns

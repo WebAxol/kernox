@@ -53,7 +53,7 @@ export declare class EntityFactory {
      * @param params Dictionary of custom parameters, with which an entity's matching attributes will be defined
      * @returns An entity of the given type built based on its prototype (and parameters if any)
      */
-    create(type: string, params?: object): Entity;
+    create<T extends Entity = any>(type: string, params?: object): T;
     copyFromPrototype(recipient: Entity, prototype: PrototypeSchema<any>): void;
     sendToRest(entity: Entity): void;
     private resolveImplicitNamespace;

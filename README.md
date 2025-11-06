@@ -39,6 +39,7 @@ dP     dP `88888P' dP       dP    dP `88888P' dP'  `dP
 ```bash
 npm i kernox --save
 ```
+<b>Warning: The code below is untested, not a real demo - use it carefully.</b>
 
 <p>Let's define the basic structure of our app.ts file, in which kernox will be set up. Notice we defiend a "setup" folder to separate resources like prototypes, systems and collections. Everything is packaged within "demoApp", in the form of an <b>addon</b>, which is integrated to the application.</p>
 
@@ -244,7 +245,7 @@ Finally, access to <a href="localhost:2025">localhost:2025</a> in your browser.
 
 There you go! A simple demo application as shown below:
 
-![Kernox - demo app](https://github.com/WebAxol/Kernox/demo/demo.png)
+![Kernox - simple demo app](https://github.com/WebAxol/Kernox/blob/main/demo/demo.png)
 
 
 <hr>

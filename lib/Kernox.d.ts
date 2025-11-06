@@ -5,6 +5,7 @@ import { EntityFactory } from "./entity/EntityFactory";
 import { EventBroker } from "./event/EventBroker";
 import { SystemManager } from "./system/SystemManager";
 import { ArrayList } from "./collection/ArrayList";
+import { System } from "./system/System";
 /**
  * Top-level application component: central integration point that handles all resources, including entities,
  * collections, systems, and events.
@@ -15,8 +16,9 @@ export declare class Kernox {
     private __systemManager;
     private __eventBroker;
     private __addonLoader;
-    private __frame;
     private __paused;
+    private __started;
+    private __frame;
     private __lastTime;
     private __dt;
     private __fps;
@@ -72,9 +74,10 @@ export declare class Kernox {
      */
     get eventBroker(): EventBroker;
     get addonLoader(): AddonLoader;
+    get started(): boolean;
     get frame(): number;
     get paused(): boolean;
     get dt(): number;
     get fps(): number;
 }
-export { ArrayList };
+export { ArrayList, System, KernoAddon };
