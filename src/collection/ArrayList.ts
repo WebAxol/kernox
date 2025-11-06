@@ -2,7 +2,9 @@ import { AbstractCollection } from "./AbstractCollection.js";
 import { Entity } from "../entity/Entity.js";
 
 export class ArrayList<T extends Entity = any> extends AbstractCollection{
-    protected readonly entities: Set<T> = new Set();
+    
+    protected readonly entities: T[] = [];
+    protected readonly ids : Set<string> = new Set();
     protected __changed : boolean = false;
 
     /**
@@ -13,7 +15,7 @@ export class ArrayList<T extends Entity = any> extends AbstractCollection{
         
         if(this.has(entity)) return false;
         
-        this.entities.add(entity);
+        this.entities.push(entity);
         entity.linkTo(this.constructor.name);
         this.__changed = true;
         
@@ -26,8 +28,13 @@ export class ArrayList<T extends Entity = any> extends AbstractCollection{
      */
     public remove(entity: T): boolean {
 
-        if(!this.entities.delete(entity)) return false;
+        const index : number = this.entities.indexOf(entity);
+
+        if(index == -1) return false;
         
+        this.ids.delete(entity.id);
+        this.entities.splice(index,1);
+
         entity.unlinkFrom(this.constructor.name);
         this.__changed = true;
 
@@ -38,88 +45,52 @@ export class ArrayList<T extends Entity = any> extends AbstractCollection{
      * Evaluates if a given entity belongs to the collection.
      */
     public has(entity: T): boolean {
-        return this.entities.has(entity);
+        return this.entities.indexOf(entity) != -1;
     }
 
     *[Symbol.iterator](){
-        const arr = this.toArray();
-        for (let i = 0; i < this.size(); i++) {
-            yield arr[i];
-        }
-    }
-    /**
-     * @param start Initial index: by default equals zero.
-     * @param end   Final index; if negative, it points from right to left (ej. -1 points to last element).
-     * @param step  Index increment: can be positive or negative, but not be zero. Equals one by default.
-     * @returns An iterator for a given index range and step constant.
-     * @example
-     * 
-     * for(const entity of collection.iterator(0,10,2)){
-     *     // Iterates from index zero to ten incrementing by two each time
-     *     console.log(entity);
-     * } 
-     * 
-     * for(const entity of collection.iterator(0,-1,1)){
-     *     // Iterates from index zero to last
-     *     console.log(entity);
-     * } 
-     *
-     */
-    public iterator(
-        start : number = 0, 
-        end : number = -1, 
-        step : number = 1
-    ) : IterableIterator<Entity>{
-
-        if(step == 0){
-            throw Error("Attempted to create non-changing iterator: 'step' parameter cannot be zero");
-        }
-
-        const size = this.size();
-
-        if(end < 0) end = size - end;
-
-        // Limit iteration ranges to avoid indices out of range
-
-        start = Math.max(0,start) - 1;
-        end   = Math.min(end,size - 1);
-
-        var index = start;
-        const entities = this.toArray();
-
-        return {
-            [Symbol.iterator]() {
-              return this;
-            },
-            next() {
-                if (index < size && index <= end) 
-                    return {  value: entities[index += step], done: false };
-                else
-                    return { value: undefined, done: true };    
-            }
-        };
+        yield* this.entities;
     }
 
     /**
-     * @returns An array populated with all entities within the collection.
+     * Sorts the entity array. This mutates the collection structure.
+     * @param criteria function that compares entity pairs at sorting
      */
-    public toArray(){
-        return Array.from(this.entities);
+    public sort(criteria : (a : T, b : T) => number){
+        this.entities.sort(criteria);
     }
 
     /**
      * @param criteria Boolean callback used to filter entities.
      * @returns Similar to 'toArray', but returns a filtered array of entities from the collection.
      */
-    public filter(criteria : (entity : Entity) => boolean) :Entity[] {
-        return this.toArray().filter(criteria);
+    public filter(criteria : (entity : T) => boolean) :T[] {
+        return this.entities.filter(criteria);
+    }
+
+    /**
+     * Retrieves a shallow copy of the entity array, allowing processing and mutation of entities,
+     * but keeping the original structure unmutated.
+     * @returns an entity array
+     */
+    public asArray(){
+        return Array.from(this.entities);
+    }
+
+    /**
+     * Access an element within the collection by index.
+     * @param index position within the entity array to be accessed
+     * @returns entity if exists, or undefined otherwise
+     */
+    public get(index : number){
+        return this.entities[index];
     }
 
     /**
      * @returns The number of entities within the collection.
      */
     public size() : number {
-        return this.entities.size;
+        return this.entities.length;
     }
 
     public get changed(){

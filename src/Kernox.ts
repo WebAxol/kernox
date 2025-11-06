@@ -5,7 +5,7 @@ import { EntityFactory }     from "./entity/EntityFactory.js";
 import { EventBroker }       from "./event/EventBroker.js";
 import { SystemManager }     from "./system/SystemManager.js";
 import { ArrayList }         from "./collection/ArrayList.js";
-
+import { System }            from "./system/System.js";
 /**
  * Top-level application component: central integration point that handles all resources, including entities, 
  * collections, systems, and events.
@@ -18,8 +18,9 @@ export class Kernox {
     private __eventBroker       = new EventBroker(this);
     private __addonLoader       = new AddonLoader(this);
     
+    private __paused  = false;
+    private __started = false;
     private __frame = 0;
-    private __paused = false;
     private __lastTime = 0;
     private __dt  = 1;
     private __fps = 0;
@@ -31,6 +32,10 @@ export class Kernox {
     public execute(timeSpan = 30) : void {
 
         try{
+            if(!this.__started){
+                this.__started = true;
+                this.__eventBroker.dispatch("__start");
+            }
 
             if(this.paused) return;
 
@@ -116,6 +121,10 @@ export class Kernox {
         return this.__addonLoader;
     }
 
+    public get started(){
+        return this.__started;
+    }
+
     public get frame(){
         return this.__frame;
     }
@@ -133,4 +142,4 @@ export class Kernox {
     }
 }
 
-export { ArrayList };
+export { ArrayList, System, KernoAddon };

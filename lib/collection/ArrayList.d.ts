@@ -1,7 +1,8 @@
 import { AbstractCollection } from "./AbstractCollection";
 import { Entity } from "../entity/Entity";
 export declare class ArrayList<T extends Entity = any> extends AbstractCollection {
-    protected readonly entities: Set<T>;
+    protected readonly entities: T[];
+    protected readonly ids: Set<string>;
     protected __changed: boolean;
     /**
      * Appends an entity at the end of the current collection.
@@ -19,33 +20,27 @@ export declare class ArrayList<T extends Entity = any> extends AbstractCollectio
     has(entity: T): boolean;
     [Symbol.iterator](): Generator<T, void, unknown>;
     /**
-     * @param start Initial index: by default equals zero.
-     * @param end   Final index; if negative, it points from right to left (ej. -1 points to last element).
-     * @param step  Index increment: can be positive or negative, but not be zero. Equals one by default.
-     * @returns An iterator for a given index range and step constant.
-     * @example
-     *
-     * for(const entity of collection.iterator(0,10,2)){
-     *     // Iterates from index zero to ten incrementing by two each time
-     *     console.log(entity);
-     * }
-     *
-     * for(const entity of collection.iterator(0,-1,1)){
-     *     // Iterates from index zero to last
-     *     console.log(entity);
-     * }
-     *
+     * Sorts the entity array. This mutates the collection structure.
+     * @param criteria function that compares entity pairs at sorting
      */
-    iterator(start?: number, end?: number, step?: number): IterableIterator<Entity>;
-    /**
-     * @returns An array populated with all entities within the collection.
-     */
-    toArray(): T[];
+    sort(criteria: (a: T, b: T) => number): void;
     /**
      * @param criteria Boolean callback used to filter entities.
      * @returns Similar to 'toArray', but returns a filtered array of entities from the collection.
      */
-    filter(criteria: (entity: Entity) => boolean): Entity[];
+    filter(criteria: (entity: T) => boolean): T[];
+    /**
+     * Retrieves a shallow copy of the entity array, allowing processing and mutation of entities,
+     * but keeping the original structure unmutated.
+     * @returns an entity array
+     */
+    asArray(): T[];
+    /**
+     * Access an element within the collection by index.
+     * @param index position within the entity array to be accessed
+     * @returns entity if exists, or undefined otherwise
+     */
+    get(index: number): T;
     /**
      * @returns The number of entities within the collection.
      */

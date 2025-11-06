@@ -1,0 +1,695 @@
+# Addons
+
+## Overview
+
+Addons are packages of related resources (prototypes, systems, collections) that can be integrated into a Kernox application. They provide a modular way to organize your code, enable code reuse across projects, and prevent naming conflicts through namespacing.
+
+## What is an Addon?
+
+An addon is simply an object that conforms to the `KernoAddon` interface. It bundles together:
+
+- **Prototypes**: Entity templates
+- **Systems**: Game logic classes
+- **Collections**: Entity storage classes
+- **Dependencies**: Other addons this addon requires
+
+## KernoAddon Interface
+
+```typescript
+interface KernoAddon {
+  name: string;                                      // Required: unique identifier
+  prototypes?: PrototypeSchema<any>[];               // Optional: entity templates
+  collections?: (new (...args: any[]) => AbstractCollection)[];  // Optional: collection classes
+  systems?: (new (...args: any[]) => System)[];      // Optional: system classes
+  dependancies?: KernoAddon[];                       // Optional: other addons
+}
+```
+
+**Location**: `src/addon/KernoxAddon.ts`
+
+## Creating an Addon
+
+### Basic Addon
+
+```typescript
+import type { KernoAddon } from "kernox";
+import { playerPrototype, enemyPrototype } from "./prototypes";
+import { Players, Enemies } from "./collections";
+import { MovementSystem, CombatSystem } from "./systems";
+
+const gameAddon: KernoAddon = {
+  name: "game",
+  prototypes: [playerPrototype, enemyPrototype],
+  collections: [Players, Enemies],
+  systems: [MovementSystem, CombatSystem]
+};
+
+export default gameAddon;
+```
+
+### Recommended Project Structure
+
+```
+your-addon/
+--> src/
+    -> proto/            # Entity prototypes
+      -> Circle.ts     
+      -> Kinetic.ts
+      -> Player.ts
+    -> systems/          # System classes
+        -> MovementSystem.ts
+        -> CombatSystem.ts
+        -> RenderSystem.ts
+    -> collections.ts    # Collection classes
+    -> main.ts           # Define your addon and exports
+```
+
+### app.ts (Main Entry)
+
+```typescript
+import { Kernox } from "kernox";
+import gameAddon from "./addons/game";
+
+const app = new Kernox();
+
+// Load addon
+app.use(gameAddon);
+
+// Start execution loop
+app.execute();
+```
+
+### index.ts (Addon Definition)
+
+```typescript
+import type { KernoAddon } from "kernox";
+import { prototypes } from "./prototypes";
+import { collections } from "./collections";
+import { systems } from "./systems";
+
+const gameAddon: KernoAddon = {
+  name: "game",
+  prototypes,
+  collections,
+  systems
+};
+
+export default gameAddon;
+```
+
+### prototypes.ts
+
+```typescript
+import type { PrototypeSchema, Entity } from "kernox";
+
+interface Player extends Entity {
+  hp: number;
+  position: { x: number; y: number };
+}
+
+const playerPrototype: PrototypeSchema<Player> = {
+  name: "Player",
+  attributes: {
+    hp: 100,
+    position: { x: 0, y: 0 }
+  } as Player,
+  collections: new Set(["Players"])
+};
+
+// Export all prototypes
+export const prototypes = [playerPrototype];
+```
+
+### collections.ts
+
+```typescript
+import { ArrayList } from "kernox";
+
+class Players extends ArrayList {}
+class Enemies extends ArrayList {}
+
+export const collections = [Players, Enemies];
+```
+
+### systems/ (System Classes)
+
+```typescript
+// systems/MovementSystem.ts
+import { System } from "kernox";
+
+export default class MovementSystem extends System {
+  init() {
+    // Initialize
+  }
+
+  execute() {
+    // Update movement each frame
+  }
+}
+```
+
+```typescript
+// systems/index.ts
+import MovementSystem from "./MovementSystem";
+import CombatSystem from "./CombatSystem";
+import RenderSystem from "./RenderSystem";
+
+export const systems = [
+  MovementSystem,
+  CombatSystem,
+  RenderSystem
+];
+```
+
+## Loading Addons
+
+### Using app.use()
+
+The primary way to load addons:
+
+```typescript
+const app = new Kernox();
+
+// Load single addon
+app.use(gameAddon);
+
+// Load multiple addons
+app.use(physicsAddon);
+app.use(renderAddon);
+app.use(audioAddon);
+```
+
+### Loading Order
+
+Addons are processed in the order they're loaded:
+
+```typescript
+app.use(coreAddon);      // 1st - Core systems
+app.use(physicsAddon);   // 2nd - Physics systems
+app.use(gameAddon);      // 3rd - Game systems
+app.use(uiAddon);        // 4th - UI systems
+```
+
+Systems from all addons execute in the order they were registered:
+1. All systems from `coreAddon`
+2. Then all systems from `physicsAddon`
+3. Then all systems from `gameAddon`
+4. Then all systems from `uiAddon`
+
+## Namespaces
+
+Each addon's `name` property becomes its **namespace**, preventing conflicts between addons.
+
+### How Namespaces Work
+
+When an addon is loaded, its resources are prefixed with the addon name:
+
+```typescript
+// Addon definition
+const myAddon: KernoAddon = {
+  name: "myAddon",
+  prototypes: [playerPrototype],  // Becomes "myAddon.Player"
+  collections: [Players],          // Becomes "myAddon.Players"
+  // Events also use this namespace
+};
+```
+
+### Explicit Namespace Access
+
+```typescript
+// Create entity with explicit namespace
+const player = app.entityFactory.create("myAddon.Player", { hp: 100 });
+
+// Get collection with explicit namespace
+const players = app.collectionManager.get("myAddon.Players");
+
+// Dispatch event with explicit namespace
+app.eventBroker.dispatch("myAddon.gameStart", {});
+```
+
+### Implicit Namespace Resolution
+
+Within a system, you can omit the namespace:
+
+```typescript
+class MySystem extends System {
+  init() {
+    // Automatically resolves to "myAddon.Players"
+    this.players = this.getCollection("Players");
+
+    // Automatically resolves to "myAddon.gameStart"
+    this.attachToEvent("gameStart", this.onStart.bind(this));
+  }
+
+  execute() {
+    // Automatically resolves to "myAddon.Player"
+    const player = this.__kernox.entityFactory.create("Player");
+  }
+}
+```
+
+### Cross-Addon Access
+
+Access resources from other addons using explicit namespaces:
+
+```typescript
+class GameSystem extends System {
+  init() {
+    // Access collection from physics addon
+    const bodies = this.getCollection("physics.RigidBodies");
+
+    // Listen to event from input addon
+    this.attachToEvent("input.keyPress", this.onKeyPress.bind(this));
+  }
+
+  execute() {
+    // Create entity from graphics addon
+    const sprite = this.__kernox.entityFactory.create("graphics.Sprite");
+  }
+}
+```
+
+## Addon Dependencies
+
+Specify other addons that your addon requires:
+
+```typescript
+import physicsAddon from "./physics";
+import renderAddon from "./render";
+
+const gameAddon: KernoAddon = {
+  name: "game",
+  prototypes: [/* ... */],
+  systems: [/* ... */],
+  collections: [/* ... */],
+
+  // Dependencies are loaded automatically
+  dependancies: [physicsAddon, renderAddon]
+};
+
+// When you load gameAddon, physicsAddon and renderAddon
+// are automatically loaded first
+app.use(gameAddon);
+```
+
+### Dependency Resolution
+
+Dependencies are loaded recursively before the parent addon:
+
+```typescript
+const coreAddon = { name: "core" };
+const physicsAddon = { name: "physics", dependancies: [coreAddon] };
+const gameAddon = { name: "game", dependancies: [physicsAddon] };
+
+app.use(gameAddon);
+// Loading order: coreAddon � physicsAddon � gameAddon
+```
+
+## AddonLoader
+
+The `AddonLoader` (`src/addon/AddonLoader.ts`) manages addon registration and resource loading.
+
+### Methods
+
+```typescript
+class AddonLoader {
+  use(addon: KernoAddon): void;          // Load an addon
+  get namespaces(): Set<string>;          // Get all registered namespaces
+}
+```
+
+Access via Kernox instance:
+
+```typescript
+const app = new Kernox();
+
+// Load addon
+app.addonLoader.use(myAddon);
+
+// Get all namespaces
+const namespaces = app.addonLoader.namespaces;
+console.log(Array.from(namespaces));  // ["core", "physics", "game"]
+```
+
+## Common Addon Patterns
+
+### Pattern 1: Feature Addon
+
+Package a complete feature:
+
+```typescript
+// addons/inventory/index.ts
+const inventoryAddon: KernoAddon = {
+  name: "inventory",
+  prototypes: [
+    itemPrototype,
+    containerPrototype,
+    equipmentSlotPrototype
+  ],
+  collections: [
+    Items,
+    Containers
+  ],
+  systems: [
+    InventorySystem,
+    EquipmentSystem,
+    ItemPickupSystem
+  ]
+};
+```
+
+### Pattern 2: Plugin Addon
+
+Extend existing functionality:
+
+```typescript
+// addons/audio-plugin/index.ts
+const audioAddon: KernoAddon = {
+  name: "audio",
+  systems: [
+    AudioSystem,        // Listens to game events
+    MusicSystem,
+    SoundEffectSystem
+  ],
+  dependancies: [gameAddon]  // Depends on core game
+};
+```
+
+### Pattern 3: Utility Addon
+
+Provide shared utilities:
+
+```typescript
+// addons/utils/index.ts
+const utilsAddon: KernoAddon = {
+  name: "utils",
+  systems: [
+    DebugSystem,
+    PerformanceMonitorSystem,
+    LoggingSystem
+  ]
+};
+```
+
+### Pattern 4: Layer Addon
+
+Organize by application layer:
+
+```typescript
+// Core logic
+const coreAddon: KernoAddon = {
+  name: "core",
+  prototypes: [/* ... */],
+  systems: [GameStateSystem, TimerSystem]
+};
+
+// Physics layer
+const physicsAddon: KernoAddon = {
+  name: "physics",
+  systems: [PhysicsSystem, CollisionSystem],
+  dependancies: [coreAddon]
+};
+
+// Rendering layer
+const renderAddon: KernoAddon = {
+  name: "render",
+  systems: [RenderSystem, CameraSystem],
+  dependancies: [coreAddon]
+};
+```
+
+### Pattern 5: Reusable Library Addon
+
+Create reusable components for multiple projects:
+
+```typescript
+// lib/platformer-kit/index.ts
+export const platformerAddon: KernoAddon = {
+  name: "platformer",
+  prototypes: [
+    platformCharacterPrototype,
+    platformPrototype,
+    ladderPrototype
+  ],
+  systems: [
+    PlatformerPhysicsSystem,
+    LadderSystem,
+    JumpSystem
+  ]
+};
+
+// Use in multiple projects
+// project-a/app.ts
+import { platformerAddon } from "platformer-kit";
+app.use(platformerAddon);
+
+// project-b/app.ts
+import { platformerAddon } from "platformer-kit";
+app.use(platformerAddon);
+```
+
+## Example: Multi-Addon Application
+
+```typescript
+// addons/core/index.ts
+const coreAddon: KernoAddon = {
+  name: "core",
+  systems: [GameStateSystem, TimerSystem]
+};
+
+// addons/input/index.ts
+const inputAddon: KernoAddon = {
+  name: "input",
+  systems: [KeyboardSystem, MouseSystem],
+  dependancies: [coreAddon]
+};
+
+// addons/physics/index.ts
+const physicsAddon: KernoAddon = {
+  name: "physics",
+  prototypes: [kineticPrototype, colliderPrototype],
+  collections: [Kinetics, Collidables],
+  systems: [PhysicsSystem, CollisionSystem],
+  dependancies: [coreAddon]
+};
+
+// addons/game/index.ts
+const gameAddon: KernoAddon = {
+  name: "game",
+  prototypes: [playerPrototype, enemyPrototype],
+  collections: [Players, Enemies],
+  systems: [
+    PlayerSystem,
+    EnemyAISystem,
+    CombatSystem,
+    SpawnSystem
+  ],
+  dependancies: [inputAddon, physicsAddon]
+};
+
+// addons/graphics/index.ts
+const graphicsAddon: KernoAddon = {
+  name: "graphics",
+  prototypes: [spritePrototype, animationPrototype],
+  collections: [Renderables],
+  systems: [RenderSystem, AnimationSystem, CameraSystem],
+  dependancies: [coreAddon, physicsAddon]
+};
+
+// app.ts
+import { Kernox } from "kernox";
+import gameAddon from "./addons/game";
+import graphicsAddon from "./addons/graphics";
+
+const app = new Kernox();
+
+// Dependencies are automatically loaded
+app.use(gameAddon);      // Loads: core � input � physics � game
+app.use(graphicsAddon);  // Loads: graphics (core/physics already loaded)
+
+app.execute();
+```
+
+## Best Practices
+
+### 1. Single Responsibility
+
+Each addon should have a clear purpose:
+
+```typescript
+// Good - Focused addons
+const physicsAddon = { name: "physics", /* physics only */ };
+const audioAddon = { name: "audio", /* audio only */ };
+const renderAddon = { name: "render", /* rendering only */ };
+
+// Avoid - Kitchen sink addon
+const everythingAddon = {
+  name: "everything",
+  // Physics, audio, rendering, AI, networking...
+};
+```
+
+### 2. Explicit Dependencies
+
+Always declare dependencies:
+
+```typescript
+// Good - Clear dependencies
+const gameAddon: KernoAddon = {
+  name: "game",
+  systems: [GameSystem],
+  dependancies: [physicsAddon, inputAddon]
+};
+
+// Avoid - Hidden dependencies
+const gameAddon: KernoAddon = {
+  name: "game",
+  systems: [GameSystem]  // Uses physics and input but doesn't declare it
+};
+```
+
+### 3. Meaningful Names
+
+Use descriptive addon names:
+
+```typescript
+// Good
+const inventoryAddon = { name: "inventory" };
+const combatAddon = { name: "combat" };
+const audioAddon = { name: "audio" };
+
+// Avoid
+const addon1 = { name: "a1" };
+const stuff = { name: "stuff" };
+const myAddon = { name: "addon" };
+```
+
+### 4. Avoid Circular Dependencies
+
+```typescript
+// Bad - Circular dependency
+const addonA = {
+  name: "a",
+  dependancies: [addonB]
+};
+
+const addonB = {
+  name: "b",
+  dependancies: [addonA]  // Circular!
+};
+
+// Good - One-way dependencies
+const coreAddon = { name: "core" };
+const addonA = { name: "a", dependancies: [coreAddon] };
+const addonB = { name: "b", dependancies: [coreAddon] };
+```
+
+### 5. Export Types
+
+Export TypeScript types for better developer experience:
+
+```typescript
+// addons/game/index.ts
+import type { KernoAddon } from "kernox";
+
+// Export types
+export type { Player, Enemy } from "./prototypes";
+export { Players, Enemies } from "./collections";
+
+// Export addon
+const gameAddon: KernoAddon = { /* ... */ };
+export default gameAddon;
+
+// Usage in other files
+import gameAddon, { Player, Players } from "./addons/game";
+```
+
+## Publishing Addons
+
+### As NPM Package
+
+```json
+// package.json
+{
+  "name": "kernox-addon-physics",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "peerDependencies": {
+    "kernox": "^1.0.0"
+  }
+}
+```
+
+```typescript
+// src/index.ts
+import type { KernoAddon } from "kernox";
+
+const physicsAddon: KernoAddon = { /* ... */ };
+
+export default physicsAddon;
+export * from "./types";
+```
+
+### Usage
+
+```bash
+npm install kernox-addon-physics
+```
+
+```typescript
+import { Kernox } from "kernox";
+import physicsAddon from "kernox-addon-physics";
+
+const app = new Kernox();
+app.use(physicsAddon);
+```
+
+## Troubleshooting
+
+### Duplicate Name Error
+
+```
+Error: Addon 'game' has already been loaded
+```
+
+**Solution**: Each addon must have a unique name, or don't load the same addon twice.
+
+### Ambiguous Resource
+
+```
+Error: Ambiguous entity type 'Player' was requested
+```
+
+**Solution**: Multiple addons define 'Player'. Use explicit namespace:
+```typescript
+app.entityFactory.create("game.Player");
+```
+
+### Dependency Not Loaded
+
+If a system tries to access resources from an undeclared dependency:
+
+**Solution**: Add the dependency to the `dependancies` array:
+```typescript
+const myAddon: KernoAddon = {
+  name: "myAddon",
+  dependancies: [requiredAddon]
+};
+```
+
+### System Execution Order
+
+If systems execute in wrong order:
+
+**Solution**:
+1. Ensure addons are loaded in correct order
+2. Or rearrange systems array within addon
+3. Or use events for cross-system communication
+
+## Next Steps
+
+- [Architecture](./architecture.md) - Understand how addons fit in the overall structure
+- [Systems](./systems.md) - Learn how to create systems for your addon
+- [Entities](./entities.md) - Define prototypes for your addon
+- [Collections](./collections.md) - Create collections for your addon

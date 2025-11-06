@@ -98,7 +98,7 @@ export class System {
      *    }
      * };
      */
-    protected dispatchEvent(eventName : string, details : object) : void {
+    public dispatchEvent(eventName : string, details : object) : void {
         this.__kernox.eventBroker.dispatch(eventName,details);
     }
 
@@ -107,13 +107,13 @@ export class System {
      * @param collectionName Name of collection
      * @returns an entitity collection or undefined
      */
-    protected getCollection<T extends AbstractCollection>(collectionName : string) : T {
+    public getCollection<T extends AbstractCollection = any>(collectionName : string) : T {
         const resourceName = this.resolveResourceName(collectionName);
-        const collection = this.__kernox.collectionManager.get(resourceName);
+        const collection = this.__kernox.collectionManager.get<T>(resourceName);
         if(!collection) throw Error(`Collection '${resourceName}' was not found`);
-        return collection as T;
+        return collection;
     }
-
+    
     /**
      * @param resourceName Name of whatever it is being requested
      * @returns 

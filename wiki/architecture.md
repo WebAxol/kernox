@@ -1,0 +1,207 @@
+# Architecture
+
+## Overview
+
+Kernox is built on the **Entity-Component-System (ECS)** architectural pattern, designed for building highly decoupled real-time applications in JavaScript/TypeScript. This architecture promotes separation of concerns and provides excellent performance for applications that need to process many objects each frame.
+
+## Core Concepts
+
+### Entity-Component-System Pattern
+
+The ECS pattern separates data from behavior:
+
+- **Entities**: Objects that exist in your application (e.g., players, enemies, projectiles)
+- **Components**: Data containers that define properties (implemented as attributes in prototypes)
+- **Systems**: Logic processors that operate on entities with specific components
+
+This separation enables:
+- Better code reusability
+- Easier testing and debugging
+- Improved performance through data-oriented design
+- Flexible entity composition through multi-inheritance
+
+## Architecture Diagram
+
+```
+=======================================================
+|                      Kernox                         |
+|  (Central Integration Point)                        |
+=======================================================
+            |
+            |--> EntityFactory
+            |    --> Creates entities from prototypes
+            |         with multi-inheritance support
+            |
+            |--> CollectionManager
+            |    --> Manages entity collections
+            |         (ArrayList, etc.)
+            |
+            |--> SystemManager
+            |    --> Executes systems sequentially
+            |         each frame
+            |
+            |--> EventBroker
+            |    --> Dispatches events between systems
+            |
+            |--> AddonLoader
+                 --> Loads and integrates addons
+                      (bundles of resources)
+```
+
+## Main Components
+
+### 1. Kernox (Core)
+
+The main application class that orchestrates all other managers. It provides:
+
+- **Execution loop**: Runs at 60 FPS using `requestAnimationFrame`
+- **Addon integration**: Loads resources through the `use()` method
+- **Manager access**: Provides getters to all manager instances
+- **Frame tracking**: Monitors FPS, delta time, and frame count
+
+**Location**: `src/Kernox.ts`
+
+### 2. EntityFactory
+
+Handles entity creation and prototype management:
+
+- Registers entity prototypes with attributes
+- Creates entity instances from prototypes
+- Supports multi-inheritance between prototypes
+- Deep-copies prototype attributes to avoid reference issues
+
+**Location**: `src/entity/EntityFactory.ts`
+
+### 3. CollectionManager
+
+Manages collections of entities:
+
+- Creates and retrieves collections by name
+- Supports different collection types (ArrayList, custom collections)
+- Automatically assigns entities to collections based on their prototype
+
+**Location**: `src/collection/CollectionManager.ts`
+
+### 4. SystemManager
+
+Executes application logic:
+
+- Instantiates and initializes System classes
+- Runs systems sequentially each frame
+- Provides dependency injection for collections and events
+
+**Location**: `src/system/SystemManager.ts`
+
+### 5. EventBroker
+
+Facilitates communication between systems:
+
+- Event-based pub/sub messaging
+- Namespace support for addon isolation
+- Type-safe event handlers
+
+**Location**: `src/event/EventBroker.ts`
+
+### 6. AddonLoader
+
+Packages and loads application resources:
+
+- Bundles prototypes, systems, collections, and dependencies
+- Manages namespaces to prevent naming conflicts
+- Supports addon dependencies
+
+**Location**: `src/addon/AddonLoader.ts`
+
+## Data Flow
+
+### Application Lifecycle
+
+1. **Initialization**
+   ```typescript
+   const app = new Kernox();
+   app.use(myAddon);  // Load resources
+   app.execute();     // Start execution loop
+   ```
+
+2. **Setup Phase** (happens once when addon is loaded)
+   - Register prototypes with EntityFactory
+   - Instantiate collections in CollectionManager
+   - Create and initialize Systems in SystemManager
+
+3. **Execution Loop** (runs every frame)
+   ```
+   ========================================
+   |  1. requestAnimationFrame callback   |
+   |  2. Calculate delta time (dt)        |
+   |                                      |
+   |  3. SystemManager.execute()          |
+   |     --> Execute each System in order |
+   |  4. Schedule next frame              |
+   ========================================
+   ```
+
+4. **System Execution** (each frame)
+   - Systems can read/write entities in collections
+   - Systems can dispatch events
+   - Systems can listen to events from other systems
+
+### Entity Lifecycle
+
+```
+Prototype Definition � Registration � Entity Creation � Collection Assignment � System Processing
+```
+
+1. **Define Prototype**: Create a `PrototypeSchema<T>` with attributes
+2. **Register**: Call `entityFactory.prototype(schema)`
+3. **Create Entity**: Call `entityFactory.create(type, params)`
+4. **Auto-assign**: Entity is automatically added to specified collections
+5. **Process**: Systems iterate over collections and process entities
+
+## Namespace System
+
+Kernox uses namespaces to prevent conflicts between addons:
+
+```typescript
+// Explicit namespace
+app.entityFactory.create("myAddon.Player", { hp: 100 });
+
+// Implicit namespace resolution (when unambiguous)
+app.entityFactory.create("Player", { hp: 100 });
+```
+
+Resources (prototypes, collections, events) can be accessed with or without namespaces. If multiple addons define the same resource name, you must use the explicit namespace.
+
+## Performance Considerations
+
+### Frame Budget
+
+With a 60 FPS target, each frame has ~16.67ms to complete all processing:
+
+- Entity iteration should be O(n)
+- Avoid expensive operations in hot paths
+- Use collections efficiently
+- Consider object pooling for frequently created/destroyed entities
+
+### Memory Management
+
+- Entities are created with unique IDs
+- Collections hold references to entities
+- Entity attributes are deep-copied from prototypes
+- Consider implementing object pooling (via `sendToRest()` method)
+
+## Best Practices
+
+1. **Separate Concerns**: Keep data (entities) separate from logic (systems)
+2. **Single Responsibility**: Each system should handle one specific task
+3. **Event-Driven**: Use events for cross-system communication
+4. **Composition**: Build complex entities through prototype inheritance
+5. **Namespace**: Use namespaces for addon isolation
+6. **Modular**: Package related resources into addons
+
+## Next Steps
+
+- [Entities and Prototypes](./entities.md) - Learn how to define and create entities
+- [Collections](./collections.md) - Understand entity storage and access
+- [Systems](./systems.md) - Implement game logic and behavior
+- [Events](./events.md) - Communication between systems
+- [Addons](./addons.md) - Package and organize your application

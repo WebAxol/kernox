@@ -23,5 +23,5 @@ export default  {
         minimize  : true,
         minimizer : [new TerserPlugin()]
     },
-    mode : "production",
+    mode : "development",
 }
