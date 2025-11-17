@@ -1,9 +1,10 @@
 import { System } from "../../system/System.js";
 import type { Renderables } from "../setup/collections.js";
+import { CollectionProxy } from "../../collection/CollectionProxy.js";
 
 export class RenderingSystem extends System {
 
-    private renderables! : Renderables;
+    private renderables! : CollectionProxy<Renderables>;
     private ctx! : CanvasRenderingContext2D;
 
     public init() : void {
@@ -16,8 +17,8 @@ export class RenderingSystem extends System {
 
         this.ctx = ctx;
 
-        // Dependancy injection during application setup
-        this.renderables = this.getCollection<Renderables>("Renderables");
+        // Use CollectionProxy to automatically update when scenes change
+        this.renderables = this.__kernox.collectionManager.getSmartWrapper<Renderables>("demoApp.Renderables");
     }
 
 
