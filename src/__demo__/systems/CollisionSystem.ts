@@ -1,13 +1,14 @@
 import { System } from "../../system/System.js";
 import { Kinetics, Renderables } from "../setup/collections.js";
+import { CollectionProxy } from "../../collection/CollectionProxy.js";
 
 export class CollisionSystem extends System {
   
-  private kinetics! : Kinetics & Renderables;
+  private kinetics! : CollectionProxy<Kinetics>;
 
   public init() : void {
-    // Dependancy injection during application setup
-    this.kinetics = this.getCollection<Kinetics & Renderables>("Kinetics");
+    // Use CollectionProxy to automatically update when scenes change
+    this.kinetics = this.__kernox.collectionManager.getSmartWrapper<Kinetics>("demoApp.Kinetics");
   }
 
   public execute() : void {
