@@ -3,6 +3,7 @@ import { Entity } from "../entity/Entity.js";
 import { ArrayList } from "./ArrayList.js";
 import { isSubclassOf } from "../utils/isSubclassOf.js";
 import { Kernox } from "../Kernox.js";
+import { CollectionProxy } from "./CollectionProxy.js";
 
 export class CollectionManager {
 
@@ -26,6 +27,7 @@ export class CollectionManager {
     private activeScene : string = "default";
     
     private toRemove    : Set<Entity> = new Set();
+    private wrappers    : Set<CollectionProxy<AbstractCollection>> = new Set();
 
     constructor( private __kernox : Kernox ) {
         // Initialize default scene
@@ -63,6 +65,59 @@ export class CollectionManager {
         
         // Create instance for active scene
         return this.ensureCollectionInScene(collectionName, template) as T;
+    }
+
+    /**
+     * Gets or creates a CollectionProxy for the specified collection.
+     * The wrapper automatically updates when the scene changes, so systems don't
+     * have to manually update their collection references.
+     * @param collectionName Name of the collection to wrap
+     * @returns A CollectionProxy that proxies to the active collection
+     */
+    public getSmartWrapper<T extends AbstractCollection>(collectionName : string) : CollectionProxy<T> {
+        const collection = this.get<T>(collectionName);
+        
+        // Check if a wrapper already exists for this collection
+        for (const wrapper of this.wrappers) {
+            if (wrapper.name === collectionName) {
+                return wrapper as unknown as CollectionProxy<T>;
+            }
+        }
+
+        // Create a new wrapper
+        const wrapper = new CollectionProxy<T>(
+            collectionName,
+            collection,
+            (w) => {
+                // Update callback: when collection changes, update the wrapper
+                // This will be called when scene changes in the future
+            }
+        );
+
+        this.wrappers.add(wrapper as unknown as CollectionProxy<AbstractCollection>);
+        return wrapper;
+    }
+
+    /**
+     * Notifies all CollectionProxy instances to update their collection references.
+     * This should be called by CollectionManager when the scene changes.
+     * @param collectionName The name of the collection that changed
+     * @param newCollection The new collection instance for the active scene
+     */
+    public notifyWrappers(collectionName: string, newCollection: AbstractCollection): void {
+        for (const wrapper of this.wrappers) {
+            if (wrapper.name === collectionName) {
+                wrapper.updateCollection(newCollection as any);
+            }
+        }
+    }
+
+    /**
+     * Unregisters a CollectionProxy to prevent memory leaks.
+     * @param wrapper The wrapper instance to unregister
+     */
+    public unregisterWrapper(wrapper: CollectionProxy<AbstractCollection>): void {
+        this.wrappers.delete(wrapper);
     }
 
     /**
@@ -119,6 +174,7 @@ export class CollectionManager {
 
     /**
      * Switches to a different scene, creating collection instances if they don't exist.
+     * Also notifies all CollectionProxy instances to update their references.
      * @param sceneName Name of the scene to switch to
      */
     public switchScene(sceneName : string) : void {
@@ -142,6 +198,11 @@ export class CollectionManager {
         }
         
         this.activeScene = sceneName;
+        
+        // Notify all wrappers about the scene change
+        for (const [collectionName, newCollection] of newSceneCollections) {
+            this.notifyWrappers(collectionName, newCollection);
+        }
     }
     
     /**
