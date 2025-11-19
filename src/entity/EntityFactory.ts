@@ -3,11 +3,11 @@ import { Entity } from "./Entity.js";
 import { Kernox } from "../Kernox.js";
 
 export class EntityFactory{
-    
+
     private types :Map<string,PrototypeSchema<any>> = new Map();
-    private pools :Map<string,[]> = new Map();
+    private pools :Map<string,Entity[]> = new Map();
     private nextID : number = 0;
-   
+
     constructor( private __kernox : Kernox ){}
 
     /**
@@ -108,14 +108,23 @@ export class EntityFactory{
 
         const prototype : PrototypeSchema<any> | undefined = this.types.get(type) || this.resolveImplicitNamespace(type);
 
-        if(!prototype){ 
+        if(!prototype){
             throw Error(`Cannot create entity of null type '${type}'`);
         }
 
-        const entity = new Entity('' + this.nextID++, type) as T;
+        // Try to recycle an entity from the pool
+        let entity: Entity | undefined;
+        const pool = this.pools.get(type);
 
-        this.deepAssign(entity, prototype.attributes);
+        if(pool && pool.length > 0){
+            entity = pool.pop()!;
+            this.resetEntityState(entity, prototype);
+        } else {
+            entity = new Entity('' + this.nextID++, type);
+            this.deepAssign(entity, prototype.attributes);
+        }
 
+        // Apply custom parameters
         for(const param of Object.keys(params)){
             if(param in entity && !param.includes("_")) entity[param] = params[param];
         }
@@ -128,14 +137,14 @@ export class EntityFactory{
         // Assign entity to collections
 
         for(let collection of (prototype.collections || [])){
-            
+
             if(context) collection = `${context}.${collection}`;
 
             this.__kernox.collectionManager.addEntityTo(entity,collection);
             entity.linkTo(collection);
         }
 
-        return entity;
+        return entity as T;
     }
 
     public copyFromPrototype(recipient : Entity, prototype : PrototypeSchema<any>) : void {
@@ -143,14 +152,68 @@ export class EntityFactory{
         this.deepAssign(recipient,prototype.attributes);
     }
 
+    /**
+     * Returns an entity to its corresponding pool for later reuse.
+     * The entity is removed from all collections before being pooled.
+     * @param entity The entity to be returned to the pool
+     */
     public sendToRest(entity : Entity) : void {
 
+        const type = entity.type;
+
+        // Remove entity from all collections
+        const collections = Array.from(entity.collections());
+        for(const collection of collections){
+            this.__kernox.collectionManager.removeEntityFrom(entity, collection);
+            entity.unlinkFrom(collection);
+        }
+
+        // Get or create pool for this type
+        if(!this.pools.has(type)){
+            this.pools.set(type, []);
+        }
+
+        // Add entity to pool
+        this.pools.get(type)!.push(entity);
+    }
+
+    /**
+     * Resets an entity's state to match its prototype's default values.
+     * Clears all custom attributes, children, and collections.
+     * @param entity The entity to reset
+     * @param prototype The prototype schema to use for resetting
+     */
+    private resetEntityState(entity : Entity, prototype : PrototypeSchema<any>) : void {
+
+        // Remove all custom attributes (keep only prototype-defined ones)
+        const prototypeKeys = new Set(Object.keys(prototype.attributes));
+
+        for(const key of Object.keys(entity)){
+            if(!key.startsWith('_') && !prototypeKeys.has(key)){
+                delete entity[key];
+            }
+        }
+
+        // Clear children
+        const children = entity['__children'] as { [name: string]: Entity };
+        for(const childName of Object.keys(children)){
+            entity.deleteChild(childName);
+        }
+
+        // Clear collections (they will be re-added when entity is created)
+        const collections = Array.from(entity.collections());
+        for(const collection of collections){
+            entity.unlinkFrom(collection);
+        }
+
+        // Reset all attributes to prototype defaults
+        this.deepAssign(entity, prototype.attributes);
     }
 
     private resolveImplicitNamespace(type : string) : PrototypeSchema<any> | undefined {
-        
+
         const namespaces = this.__kernox.addonLoader.namespaces;
-        
+
         var resolved, resource;
 
         for(const namespace of namespaces){
