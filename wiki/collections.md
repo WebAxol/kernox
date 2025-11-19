@@ -604,6 +604,169 @@ for (const entity of collection) {  // Error
 
 **Solution**: Ensure collection extends `ArrayList` or implements `Symbol.iterator`.
 
+## Scene Management System
+
+Kernox implements a scene-based architecture where scenes are managed through separate collection instances. This allows for complete entity isolation between different game states (menus, levels, etc.).
+
+### Scene Architecture
+
+Rather than having a dedicated Scene class, scenes are implemented as isolated contexts:
+
+- Collections are registered as templates (constructors)
+- Each scene has its own instances of all registered collections
+- When switching scenes, new instances are created if they don't exist
+- The active scene's collections are returned when requested via `get()`
+
+**Location**: `src/collection/CollectionManager.ts:11-28`
+
+### Switching Scenes
+
+Use `switchScene()` to change between scenes:
+
+```typescript
+// Create entities in scene1
+app.collectionManager.switchScene("scene1");
+app.entityFactory.create("Circle", { color: "red" });
+
+// Switch to scene2 - entities from scene1 are preserved but not visible
+app.collectionManager.switchScene("scene2");
+app.entityFactory.create("Circle", { color: "blue" });
+
+// Switch back to scene1 - original entities still exist
+app.collectionManager.switchScene("scene1");
+```
+
+**Key Points:**
+- Scenes are created lazily when first accessed
+- Each scene maintains completely separate entity sets
+- Switching away from a scene preserves all its entities
+- The "default" scene is created automatically
+
+### Getting Active Scene
+
+```typescript
+const currentScene = app.collectionManager.getActiveScene();
+console.log(`Currently in: ${currentScene}`);
+```
+
+### Entity Isolation
+
+Entities created in one scene don't affect other scenes:
+
+```typescript
+// Create entities in default scene
+app.entityFactory.create("Player");
+app.entityFactory.create("Player");
+
+const defaultPlayers = app.collectionManager.get("Players");
+console.log(defaultPlayers.size());  // 2
+
+// Switch to level1 scene
+app.collectionManager.switchScene("level1");
+const level1Players = app.collectionManager.get("Players");
+console.log(level1Players.size());  // 0 (empty collection)
+```
+
+**Location**: `src/__tests__/CollectionManager/sceneIsolation.test.ts:20-38`
+
+### CollectionProxy for Scene-Aware Systems
+
+Systems should use CollectionProxy wrappers to automatically track scene changes:
+
+```typescript
+import { System } from "kernox";
+import { CollectionProxy } from "kernox";
+import type { Renderables } from "./collections";
+
+class RenderingSystem extends System {
+  private renderables!: CollectionProxy<Renderables>;
+
+  init() {
+    // Get smart wrapper that auto-updates on scene changes
+    this.renderables = this.__kernox.collectionManager.getSmartWrapper<Renderables>("Renderables");
+  }
+
+  execute() {
+    // Wrapper always points to active scene's collection
+    for (const entity of this.renderables) {
+      this.draw(entity);
+    }
+  }
+}
+```
+
+**Key Benefits:**
+- No manual reference updates when scenes change
+- One wrapper instance per collection name
+- Proxies all collection methods to the active collection
+
+**Location**: `src/collection/CollectionProxy.ts`, `src/__demo__/systems/RenderingSystem.ts:1-22`
+
+### Multi-Scene Setup Pattern
+
+```typescript
+const scenes = ["menu", "level1", "level2", "gameOver"];
+
+// Pre-populate all scenes
+scenes.forEach(sceneName => {
+  app.collectionManager.switchScene(sceneName);
+  initializeScene(sceneName);
+});
+
+// Start with menu
+app.collectionManager.switchScene("menu");
+```
+
+### Scene Design Principles
+
+**Scene Isolation:**
+- Complete separation - each scene has its own collection instances
+- No cross-scene pollution - entities in one scene don't affect another
+- State preservation - switching away from a scene preserves all its entities
+
+**Lazy Instantiation:**
+- Scenes are created only when first accessed
+- Collection instances are created per scene only when needed
+- Minimal memory footprint for unused scenes
+
+**Template-Based Architecture:**
+- Collections are registered once as templates (constructors)
+- Each scene instantiates its own copies from these templates
+- Ensures consistency across all scenes
+
+**Automatic Updates:**
+- Systems use CollectionProxy wrappers for scene-aware collection access
+- Proxies automatically update when scenes change
+- No manual reference management required
+
+### Entity Pooling and Scenes
+
+Entity pools are **global** (not per-scene). When an entity is returned to the pool via `sendToRest()`, it can be reused in any scene:
+
+```typescript
+// Remove entity from collections in current scene
+app.entityFactory.sendToRest(entity);
+
+// Entity is available for reuse in any scene
+app.collectionManager.switchScene("level2");
+const newEntity = app.entityFactory.create("Enemy");  // May reuse pooled entity
+```
+
+**Location**: `src/entity/EntityFactory.ts:155-178`
+
+### Scene Management API Reference
+
+**switchScene(sceneName: string)** - `src/collection/CollectionManager.ts:180`
+- Switches to a different scene
+- Creates the scene and its collections if they don't exist
+
+**getActiveScene(): string** - `src/collection/CollectionManager.ts:208-214`
+- Returns the name of the currently active scene
+
+**getSmartWrapper<T>(collectionName): CollectionProxy<T>** - `src/collection/CollectionManager.ts:70-99`
+- Gets or creates a CollectionProxy for scene-aware collection access
+- Wrapper automatically updates when scenes change
+
 ## Next Steps
 
 - [Systems](./systems.md) - Learn how to process collections

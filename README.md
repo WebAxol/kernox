@@ -27,232 +27,316 @@ dP     dP `88888P' dP       dP    dP `88888P' dP'  `dP
   </a>
 </p>
 
-                                                
-<h2><b>Introduction</b></h2>
-<p>
-  <b style="color: violet">Kernox</b> is a simple javascript <b style="color: white">framework</b> designed to build highly decoupled <b style="color: white">real-time</b> applications. Inspired on the Entity-Component-System architecture, Kernox lets you define <b style="color: white">entities</b> based on <b style="color: white">prototypes</b> with multi-inheritance, allocated within collections and processed by specialized classes called <b style="color: white">Systems</b>, which communicate using events dispatched by an <b style="color: white">event broker</b>.
-</p>
-<h2>Usage</h2>
-<p>Firstly, we need to install kernox:</p>
+## Features
 
+- **Entity-Component-System Architecture** - Highly decoupled design for scalable real-time applications
+- **Prototype-Based Entities** - Define entity templates with multi-inheritance support
+- **Scene Management** - Isolate entities across multiple game states (menus, levels, etc.)
+- **Entity Pooling** - Automatic memory optimization through object reuse
+- **Event System** - Decoupled communication via event broker
+- **Addon System** - Modular organization with namespace support
+- **TypeScript Support** - Full type safety with modern ES6+ syntax
+
+## Installation
 
 ```bash
-npm i kernox --save
+npm install kernox
 ```
-<b>Warning: The code below is untested, not a real demo - use it carefully.</b>
 
-<p>Let's define the basic structure of our app.ts file, in which kernox will be set up. Notice we defiend a "setup" folder to separate resources like prototypes, systems and collections. Everything is packaged within "demoApp", in the form of an <b>addon</b>, which is integrated to the application.</p>
+## Quick Start
 
-```ts
-// Example path : app.ts
+```typescript
+import { Kernox, KernoAddon } from "kernox";
+import { prototypes } from "./setup/prototypes.js";
+import { systems } from "./setup/systems.js";
+import { collections } from "./setup/collections.js";
 
-import { Kernox, KernoAddon }   from "kernox";
-
-// Recommended setup structure:
-
-import { prototypes  }   from "./setup/prototypes.js";
-import { systems     }   from "./setup/systems.js";
-import { collections }   from "./setup/collections.js";
-
-// Resource bundler (Addon)
-
-const demoApp : KernoAddon = {
-    name : "demoApp",
-    prototypes,
-    systems,
-    collections
+// Bundle resources as an addon
+const myApp: KernoAddon = {
+  name: "myApp",
+  prototypes,
+  systems,
+  collections
 };
 
-// Instantiate Kernox, setup addons, and run
-
+// Initialize and run
 const app = new Kernox();
-
-app.use(demoApp);
+app.use(myApp);
 app.execute();
 ```
-### Create Prototypes
 
-```ts
-// Example path : setup/prototypes.ts
+## Core Concepts
 
+### Entities and Prototypes
+
+Define entity templates with attributes and collection assignments:
+
+```typescript
 import type { PrototypeSchema, Entity } from "kernox";
 
-type Vector2D = { x : number, y : number };
+interface Player extends Entity {
+  position: { x: number; y: number };
+  velocity: { x: number; y: number };
+  hp: number;
+  level: number;
+}
 
-// Define prototype "Kinetic"
-
-interface Kinetic extends Entity {
-  position : Vector2D;
-  velocity : Vector2D;
-};
-
-const kineticPrototype : PrototypeSchema<Kinetic> = {
-  name : "Kinetic",
-  attributes : {
-    position : { x : 0, y : 0 },
-    velocity : { x : 0, y : 0 }
-  } as Kinetic,
-
-  collections : new Set([ "Kinetics" ]) 
-};
-
-// Define prototype "Sprite"
-
-interface Sprite extends Entity {
-  position   : Vector2D;
-  dimensions : Vector2D;
-  url : string;
-};
-
-const spritePrototype : PrototypeSchema<Sprite> = {
-  name : "Sprite",
-  attributes : {
-    position : { x : 0, y : 0 },
-    dimensions : { x : 1, y : 1 },
-    url : "../assets/default.png"
+const playerPrototype: PrototypeSchema<Player> = {
+  name: "Player",
+  attributes: {
+    position: { x: 0, y: 0 },
+    velocity: { x: 0, y: 0 },
+    hp: 100,
+    level: 1
   },
-  collections : new Set([ "Renderables" ])
+  collections: new Set(["Players", "Kinetics", "Renderables"])
 };
-
-// Define prototype "Player"
-
-interface Player extends Kinetic, Sprite {
-  hp : number;
-  level : number;
-  active : boolean;
-};
-
-const playerPrototype : PrototypeSchema<Player> = {
-  name : "Player",
-  attributes : {
-    hp : 20,
-    level : 1,
-    active : false
-  } as Player,
-  
-  collection : new Set([ "Players" ]),
-  
-  // Multiple inheritance:
-
-  inherits : [ 
-    kineticPrototype,
-    spritePrototype 
-  ]
-};
-
-export const prototypes = [ kineticPrototype, playerPrototype ];
 ```
 
-### Define collections
+**Multi-Inheritance:**
 
-
-```ts
-// Example path : setup/collections.ts
-
-import { ArrayList } from 'Kernox';
-
-class Kinetics     extends ArrayList {};
-class Renderables  extends ArrayList {};
-class Players      extends ArrayList {};
-
-export const collections = [ Kinetics, Renderables, Players ];
+```typescript
+const enemyPrototype: PrototypeSchema<Enemy> = {
+  name: "Enemy",
+  attributes: { damage: 10 },
+  collections: new Set(["Enemies"]),
+  inherits: [kineticPrototype, spritePrototype]  // Inherit from multiple prototypes
+};
 ```
 
-<p>Services contain code that is executed every frame by the World class. They are implemented as 'Service' sub-classes</p>
+[Learn more about entities →](wiki/entities.md)
 
-```ts
-// Example path : setup/systems.ts
+### Collections
 
-import { System, ArrayList } from 'Kernox';
+Group entities for efficient processing:
+
+```typescript
+import { ArrayList } from "kernox";
+
+// Define typed collections
+class Players extends ArrayList<Player> {}
+class Enemies extends ArrayList<Enemy> {}
+class Projectiles extends ArrayList<Projectile> {}
+
+export const collections = [Players, Enemies, Projectiles];
+```
+
+**Usage:**
+
+```typescript
+const players = app.collectionManager.get<Players>("Players");
+
+for (const player of players) {
+  console.log(`Player ${player.id} has ${player.hp} HP`);
+}
+
+// Array methods
+const alive = players.filter(p => p.hp > 0);
+const count = players.size();
+```
+
+[Learn more about collections →](wiki/collections.md)
+
+### Systems
+
+Process entities each frame:
+
+```typescript
+import { System } from "kernox";
+import type { Kinetics } from "./collections";
 
 class MovementSystem extends System {
-  
-  private kinetics : ArrayList = new ArrayList(); // Dummy instance
+  private kinetics!: Kinetics;
 
-  public init(){
-    // Dependancy injection during application setup
-    this.kinetics = this.__kernox.collectionManager.get("Kinetics");
+  init() {
+    this.kinetics = this.getCollection<Kinetics>("Kinetics");
   }
 
-  public execute(){
-    // Called each frame
-    this.kinetics.iterate((entity : any) => {
+  execute() {
+    for (const entity of this.kinetics) {
       entity.position.x += entity.velocity.x;
       entity.position.y += entity.velocity.y;
-    });
+    }
   }
 }
-
-
-class PlayerInputSystem extends System {
-
-  private active : Player = {} as Player;
-
-  private command_KeyMap = {
-        w : () => { this.active.position.x -= 1 },
-        s : () => { this.active.position.x += 1 },
-        a : () => { this.active.position.x -= 1 },
-        d : () => { this.active.position.x += 1 },
-  };
-
-  private keys = {
-      w : false,
-      s : false,
-      d : false,
-      a : false
-  };
-
-  public init(){
-    // Define event listeners to handle player inputs
-    window.addEventListener('keydown',  (e) => { this.keydown(e) });
-    window.addEventListener('keyup',    (e) => { this.keyup(e)   });
-  }
-
-  public execute(){
-    // Called each frame
-    const keys = Object.keys(this.control);
-    keys.forEach((key) => { 
-      if(this.control[key] === true){ this.command_KeyMap[key](); }
-    });   
-  }
-
-  private keydown(info){
-    if(this.control[info.key] !== undefined) this.control[info.key] = true;
-  }
-
-  private keyup(info){
-    if(this.control[info.key] !== undefined) this.control[info.key] = false;
-  }
-}
-
-export const systems = [ MovementSystem, PlayerInputSystem ];
 ```
-<hr>
-<h3>Demo</h3>
 
-First clone the repository:
+[Learn more about systems →](wiki/systems.md)
 
-``` bash
+### Scene Management
+
+Isolate entities across different game states:
+
+```typescript
+// Switch to menu scene
+app.collectionManager.switchScene("menu");
+app.entityFactory.create("Button", { text: "Start Game" });
+
+// Switch to level1 - menu entities are preserved but hidden
+app.collectionManager.switchScene("level1");
+app.entityFactory.create("Player", { position: { x: 100, y: 100 } });
+
+// Switch back to menu - entities still exist
+app.collectionManager.switchScene("menu");
+```
+
+**Scene-Aware Systems:**
+
+```typescript
+class RenderSystem extends System {
+  private renderables!: CollectionProxy<Renderables>;
+
+  init() {
+    // Automatically updates when scenes change
+    this.renderables = this.__kernox.collectionManager.getSmartWrapper<Renderables>("Renderables");
+  }
+
+  execute() {
+    for (const entity of this.renderables) {
+      this.draw(entity);
+    }
+  }
+}
+```
+
+[Learn more about scene management →](wiki/collections.md#scene-management-system)
+
+### Events
+
+Decouple communication between systems:
+
+```typescript
+// Define event
+interface PlayerDiedEvent {
+  playerId: string;
+  position: { x: number; y: number };
+}
+
+// Emit event
+this.__kernox.eventBroker.emit<PlayerDiedEvent>("player:died", {
+  playerId: player.id,
+  position: player.position
+});
+
+// Subscribe to event
+this.__kernox.eventBroker.subscribe<PlayerDiedEvent>("player:died", (data) => {
+  console.log(`Player ${data.playerId} died at`, data.position);
+  this.spawnExplosion(data.position);
+});
+```
+
+[Learn more about events →](wiki/events.md)
+
+### Entity Pooling
+
+Optimize memory usage through automatic entity recycling:
+
+```typescript
+// Create entity (may reuse pooled entity)
+const enemy = app.entityFactory.create("Enemy", {
+  position: { x: 100, y: 100 }
+});
+
+// Return entity to pool for reuse
+app.entityFactory.sendToRest(enemy);
+
+// Next create() call may reuse the pooled entity
+const newEnemy = app.entityFactory.create("Enemy");
+```
+
+Each entity type has its own pool. Entities are automatically removed from all collections before pooling.
+
+### Addon System
+
+Organize code into modular, reusable packages:
+
+```typescript
+import type { KernoAddon } from "kernox";
+
+const gameAddon: KernoAddon = {
+  name: "myGame",
+  prototypes: [playerPrototype, enemyPrototype],
+  systems: [MovementSystem, CombatSystem, RenderSystem],
+  collections: [Players, Enemies, Projectiles]
+};
+
+// Load addon with automatic namespace registration
+app.use(gameAddon);
+
+// Access namespaced resources
+app.entityFactory.create("myGame.Player");
+const players = app.collectionManager.get("myGame.Players");
+```
+
+[Learn more about addons →](wiki/addons.md)
+
+## Creating Entities
+
+```typescript
+// Create from prototype
+const player = app.entityFactory.create("Player", {
+  position: { x: 100, y: 200 },
+  hp: 80
+});
+
+// With namespace
+const enemy = app.entityFactory.create("myGame.Enemy");
+
+// Entities are automatically added to their prototype's collections
+```
+
+## Application Lifecycle
+
+```typescript
+const app = new Kernox();
+
+// Register addons
+app.use(gameAddon);
+
+// Start execution loop
+app.execute();
+
+// Stop execution
+app.stop();
+```
+
+## Demo
+
+Clone the repository and run the demo:
+
+```bash
 git clone https://github.com/WebAxol/Kernox.git
-```
-Then execute the following npm command:
-
-``` bash
+cd Kernox
+npm install
 npm start
 ```
 
-Finally, access to <a href="localhost:2025">localhost:2025</a> in your browser.
+Then visit [localhost:2025](http://localhost:2025)
 
-There you go! A simple demo application as shown below:
+![Kernox Demo](demo/demo.gif)
 
-![Kernox - simple demo app](https://github.com/WebAxol/Kernox/blob/main/demo/demo.png)
+## Documentation
 
+For detailed documentation, see the [wiki](wiki/) directory:
 
-<hr>
-<h3>Contribute</h3>
+- [Architecture Overview](wiki/architecture.md)
+- [Entities](wiki/entities.md)
+- [Collections](wiki/collections.md)
+- [Systems](wiki/systems.md)
+- [Events](wiki/events.md)
+- [Addons](wiki/addons.md)
 
-```sh
+## Contributing
+
+Contributions are welcome! Please send pull requests to the `dev` branch.
+
+```bash
 git clone https://github.com/WebAxol/Kernox.git
+cd Kernox
+npm install
+npm test
 ```
 
-Please send your pull requests to the dev branch. Thanks for your contribution!
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
