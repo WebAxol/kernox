@@ -51,11 +51,11 @@ const system = new MovementSystem(kernox, "myAddon");
 
 **Parameters**:
 - `__kernox`: Reference to the main Kernox instance
-- `__context`: Namespace from the addon
+- `__context`: The addon namespace this system belongs to
 
 ### 2. Initialization (init)
 
-Called once after all systems are instantiated but before the first frame:
+Called once immediately after instantiation, before the first frame:
 
 ```typescript
 class MovementSystem extends System {
@@ -67,9 +67,6 @@ class MovementSystem extends System {
 
     // Set up event listeners
     this.attachToEvent("jump", this.onJump.bind(this));
-
-    // Initialize state
-    console.log("MovementSystem initialized");
   }
 }
 ```
@@ -82,14 +79,13 @@ class MovementSystem extends System {
 
 ### 3. Execution (execute)
 
-Called every frame (typically 60 FPS) by the SystemManager:
+Called every frame by the SystemManager (when not paused):
 
 ```typescript
 class MovementSystem extends System {
   private kinetics!: ArrayList<Kinetic>;
 
   execute() {
-    // Process all kinetic entities
     for (const entity of this.kinetics) {
       entity.position.x += entity.velocity.x;
       entity.position.y += entity.velocity.y;
@@ -97,13 +93,6 @@ class MovementSystem extends System {
   }
 }
 ```
-
-**Use cases**:
-- Update entity state
-- Process game logic
-- Render graphics
-- Handle input
-- Dispatch events
 
 ## Creating Systems
 
@@ -122,7 +111,6 @@ class EnemyAISystem extends System {
 
   execute() {
     for (const enemy of this.enemies) {
-      // Simple AI: move towards player
       const player = this.getPlayer();
       if (player) {
         this.moveTowards(enemy, player);
@@ -156,7 +144,7 @@ export default EnemyAISystem;
 class SpawnSystem extends System {
   private enemies!: ArrayList<Enemy>;
   private spawnTimer = 0;
-  private spawnInterval = 2000;  // 2 seconds
+  private spawnInterval = 2000;
   private maxEnemies = 10;
 
   init() {
@@ -177,19 +165,10 @@ class SpawnSystem extends System {
   }
 
   private spawnEnemy() {
-    const enemy = this.__kernox.entityFactory.create("Enemy", {
-      position: this.getRandomPosition(),
+    this.__kernox.entityFactory.create("Enemy", {
+      position: { x: Math.random() * 800, y: Math.random() * 600 },
       hp: 50
     });
-
-    this.dispatchEvent("enemySpawned", { enemy });
-  }
-
-  private getRandomPosition() {
-    return {
-      x: Math.random() * 800,
-      y: Math.random() * 600
-    };
   }
 }
 ```
@@ -205,12 +184,10 @@ class CombatSystem extends System {
     this.projectiles = this.getCollection("Projectiles");
     this.enemies = this.getCollection("Enemies");
 
-    // Listen to player shoot event
     this.attachToEvent("playerShoot", this.onPlayerShoot.bind(this));
   }
 
   execute() {
-    // Check collisions
     for (const projectile of this.projectiles) {
       for (const enemy of this.enemies) {
         if (this.checkCollision(projectile, enemy)) {
@@ -222,8 +199,7 @@ class CombatSystem extends System {
 
   private onPlayerShoot(details: any) {
     const { position, direction } = details;
-
-    const projectile = this.__kernox.entityFactory.create("Projectile", {
+    this.__kernox.entityFactory.create("Projectile", {
       position: { ...position },
       velocity: {
         x: direction.x * 500,
@@ -238,66 +214,8 @@ class CombatSystem extends System {
 
     if (enemy.hp <= 0) {
       this.enemies.remove(enemy);
-      this.dispatchEvent("enemyKilled", { enemy });
+      this.__kernox.eventBroker.dispatch("enemyKilled", { enemy });
     }
-  }
-
-  private checkCollision(a: Entity, b: Entity): boolean {
-    // Collision detection logic
-    return false;
-  }
-}
-```
-
-### System with Multiple Collections
-
-```typescript
-class PhysicsSystem extends System {
-  private kinetics!: ArrayList<Kinetic>;
-  private collidables!: ArrayList<Collidable>;
-  private gravity = { x: 0, y: 9.8 };
-
-  init() {
-    this.kinetics = this.getCollection("Kinetics");
-    this.collidables = this.getCollection("Collidables");
-  }
-
-  execute() {
-    const dt = this.__kernox.dt / 1000;  // Convert to seconds
-
-    // Apply gravity and velocity
-    for (const entity of this.kinetics) {
-      entity.velocity.x += this.gravity.x * dt;
-      entity.velocity.y += this.gravity.y * dt;
-
-      entity.position.x += entity.velocity.x * dt;
-      entity.position.y += entity.velocity.y * dt;
-    }
-
-    // Handle collisions
-    this.resolveCollisions();
-  }
-
-  private resolveCollisions() {
-    for (let i = 0; i < this.collidables.size(); i++) {
-      for (let j = i + 1; j < this.collidables.size(); j++) {
-        const a = this.collidables.get(i);
-        const b = this.collidables.get(j);
-
-        if (this.checkCollision(a, b)) {
-          this.separateEntities(a, b);
-        }
-      }
-    }
-  }
-
-  private checkCollision(a: Entity, b: Entity): boolean {
-    // Implementation
-    return false;
-  }
-
-  private separateEntities(a: Entity, b: Entity) {
-    // Implementation
   }
 }
 ```
@@ -306,14 +224,14 @@ class PhysicsSystem extends System {
 
 ### getCollection(name)
 
-Retrieves a collection with namespace resolution:
+Retrieves a collection with namespace resolution. The system's own addon namespace is prepended automatically unless you provide an explicit `namespace.name` form.
 
 ```typescript
 init() {
-  // Implicit namespace (uses system's context)
+  // Resolves to "myAddon.Players"
   this.players = this.getCollection("Players");
 
-  // Explicit namespace
+  // Explicit namespace — accesses another addon's collection
   this.enemies = this.getCollection("otherAddon.Enemies");
 
   // With type safety
@@ -321,42 +239,33 @@ init() {
 }
 ```
 
-Throws an error if collection is not found.
+Throws an error if the collection is not found.
 
 ### attachToEvent(eventName, handler)
 
-Subscribes to an event:
+Subscribes to an event. The system's addon namespace is prepended automatically unless you provide an explicit `namespace.name` form.
 
 ```typescript
 init() {
-  // Listen to events in same context
+  // Registers listener as "myAddon.gameStart"
   this.attachToEvent("gameStart", this.onGameStart.bind(this));
 
-  // Listen to events from other contexts
+  // Explicit namespace — listens to another addon's event
   this.attachToEvent("input.keyPress", this.onKeyPress.bind(this));
-}
-
-private onGameStart(details: any) {
-  console.log("Game started!", details);
-}
-
-private onKeyPress(details: any) {
-  console.log("Key pressed:", details.key);
 }
 ```
 
 ### dispatchEvent(eventName, details)
 
-Emits an event to all listeners:
+Dispatches an event through the EventBroker. The event name is passed **as-is** — no namespace is prepended automatically. Use an explicit `namespace.name` form when targeting a specific addon's listeners.
 
 ```typescript
 execute() {
-  if (this.checkVictory()) {
-    this.dispatchEvent("gameWon", {
-      score: this.score,
-      time: this.elapsedTime
-    });
-  }
+  // Dispatches the literal string "gameWon"
+  this.dispatchEvent("gameWon", { score: this.score });
+
+  // Dispatches to a specific namespace
+  this.dispatchEvent("myAddon.gameWon", { score: this.score });
 }
 ```
 
@@ -370,14 +279,35 @@ system.paused = true;
 
 // Resume a system
 system.paused = false;
-
-// Check if paused
-if (system.paused) {
-  console.log("System is paused");
-}
 ```
 
 Paused systems' `execute()` methods are not called.
+
+## SystemManager
+
+The `SystemManager` (`src/system/SystemManager.ts`) manages system registration and execution.
+
+### use(SystemClass, namespace)
+
+Registers and initializes a system. Called automatically by the addon loader.
+
+### unuse(systemName)
+
+Removes a system from the execution list and registry at runtime:
+
+```typescript
+app.systemManager.unuse("myAddon.DebugSystem");
+```
+
+### get(systemName)
+
+Retrieves a registered system instance by its full namespaced name:
+
+```typescript
+const debugSystem = app.systemManager.get<DebugSystem>("myAddon.DebugSystem");
+```
+
+Returns `undefined` if not found.
 
 ## Accessing Kernox Properties
 
@@ -385,24 +315,15 @@ Systems have access to the main Kernox instance via `this.__kernox`:
 
 ```typescript
 execute() {
-  // Current frame number
-  const frame = this.__kernox.frame;
-
-  // Delta time (milliseconds since last frame)
-  const dt = this.__kernox.dt;
-
-  // Current FPS
-  const fps = this.__kernox.fps;
-
-  // Is app paused?
-  const paused = this.__kernox.paused;
-
-  // Has execution started?
-  const started = this.__kernox.started;
+  const frame   = this.__kernox.frame;    // Current frame number
+  const dt      = this.__kernox.dt;       // Delta time in milliseconds since last frame
+  const fps     = this.__kernox.fps;      // Current FPS
+  const paused  = this.__kernox.paused;   // Whether the app is paused
+  const started = this.__kernox.started;  // Whether execute() has been called
 
   // Access managers
-  const entity = this.__kernox.entityFactory.create("Player");
-  const collection = this.__kernox.collectionManager.get("Players");
+  this.__kernox.entityFactory.create("Player");
+  this.__kernox.collectionManager.get("Players");
   this.__kernox.eventBroker.dispatch("test", {});
 }
 ```
@@ -415,23 +336,17 @@ Systems execute in the order they are defined in the addon:
 const gameAddon: KernoAddon = {
   name: "game",
   systems: [
-    InputSystem,       // 1st - Handle input
-    AISystem,          // 2nd - Update AI
-    PhysicsSystem,     // 3rd - Apply physics
-    CollisionSystem,   // 4th - Resolve collisions
-    AnimationSystem,   // 5th - Update animations
-    RenderSystem       // 6th - Render everything
+    InputSystem,       // 1st
+    AISystem,          // 2nd
+    PhysicsSystem,     // 3rd
+    CollisionSystem,   // 4th
+    AnimationSystem,   // 5th
+    RenderSystem       // 6th
   ]
 };
 ```
 
-**Best Practice**: Order systems by their dependencies:
-1. Input handling
-2. Game logic / AI
-3. Physics
-4. Collision resolution
-5. Animation updates
-6. Rendering
+When multiple addons are loaded, systems from all addons execute in the order they were registered across all `app.use()` calls.
 
 ## Common Patterns
 
@@ -460,13 +375,6 @@ class InputSystem extends System {
     if (this.keys.has("ArrowUp")) this.player.velocity.y = -speed;
     else if (this.keys.has("ArrowDown")) this.player.velocity.y = speed;
     else this.player.velocity.y = 0;
-
-    if (this.keys.has(" ")) {
-      this.dispatchEvent("playerShoot", {
-        position: this.player.position,
-        direction: { x: 1, y: 0 }
-      });
-    }
   }
 }
 ```
@@ -480,41 +388,19 @@ class RenderSystem extends System {
 
   init() {
     this.renderables = this.getCollection("Renderables");
-
     const canvas = document.getElementById("canvas") as HTMLCanvasElement;
     this.ctx = canvas.getContext("2d")!;
   }
 
   execute() {
-    // Clear canvas
     this.ctx.clearRect(0, 0, 800, 600);
 
-    // Sort by depth
     const sorted = this.renderables.asArray();
     sorted.sort((a, b) => a.depth - b.depth);
 
-    // Render all sprites
     for (const sprite of sorted) {
       this.drawSprite(sprite);
     }
-  }
-
-  private drawSprite(sprite: Sprite) {
-    const img = this.getImage(sprite.url);
-    if (img) {
-      this.ctx.drawImage(
-        img,
-        sprite.position.x,
-        sprite.position.y,
-        sprite.dimensions.x,
-        sprite.dimensions.y
-      );
-    }
-  }
-
-  private getImage(url: string): HTMLImageElement | null {
-    // Image caching logic
-    return null;
   }
 }
 ```
@@ -524,102 +410,32 @@ class RenderSystem extends System {
 ```typescript
 class TimerSystem extends System {
   private elapsed = 0;
-  private gameTime = 0;
-  private isPaused = false;
-
-  init() {
-    this.attachToEvent("gamePause", () => this.isPaused = true);
-    this.attachToEvent("gameResume", () => this.isPaused = false);
-  }
 
   execute() {
-    if (!this.isPaused) {
-      const dt = this.__kernox.dt;
-      this.gameTime += dt;
-      this.elapsed += dt;
+    this.elapsed += this.__kernox.dt;
 
-      // Every second
-      if (this.elapsed >= 1000) {
-        this.elapsed -= 1000;
-        this.dispatchEvent("secondElapsed", {
-          gameTime: this.gameTime
-        });
-      }
+    if (this.elapsed >= 1000) {
+      this.elapsed -= 1000;
+      this.__kernox.eventBroker.dispatch("secondElapsed", {});
     }
   }
 }
 ```
 
-### Pattern 4: State Machine System
-
-```typescript
-enum GameState {
-  Menu,
-  Playing,
-  Paused,
-  GameOver
-}
-
-class GameStateSystem extends System {
-  private state = GameState.Menu;
-
-  init() {
-    this.attachToEvent("startGame", () => this.setState(GameState.Playing));
-    this.attachToEvent("pauseGame", () => this.setState(GameState.Paused));
-    this.attachToEvent("resumeGame", () => this.setState(GameState.Playing));
-    this.attachToEvent("gameOver", () => this.setState(GameState.GameOver));
-  }
-
-  execute() {
-    switch (this.state) {
-      case GameState.Menu:
-        this.updateMenu();
-        break;
-      case GameState.Playing:
-        this.updateGame();
-        break;
-      case GameState.Paused:
-        // Don't update
-        break;
-      case GameState.GameOver:
-        this.updateGameOver();
-        break;
-    }
-  }
-
-  private setState(newState: GameState) {
-    this.state = newState;
-    this.dispatchEvent("stateChanged", { state: newState });
-  }
-
-  private updateMenu() { /* ... */ }
-  private updateGame() { /* ... */ }
-  private updateGameOver() { /* ... */ }
-}
-```
-
-### Pattern 5: Cleanup System
+### Pattern 4: Cleanup System
 
 ```typescript
 class CleanupSystem extends System {
-  private all!: ArrayList[];
+  private projectiles!: ArrayList<Projectile>;
 
   init() {
-    this.all = [
-      this.getCollection("Projectiles"),
-      this.getCollection("Enemies"),
-      this.getCollection("Effects")
-    ];
+    this.projectiles = this.getCollection("Projectiles");
   }
 
   execute() {
-    for (const collection of this.all) {
-      const toRemove = collection.filter(e => e.shouldDestroy);
-
-      for (const entity of toRemove) {
-        collection.remove(entity);
-        this.dispatchEvent("entityDestroyed", { entity });
-      }
+    const toRemove = this.projectiles.filter(e => e.shouldDestroy);
+    for (const entity of toRemove) {
+      this.__kernox.entityFactory.sendToRest(entity);
     }
   }
 }
@@ -630,19 +446,14 @@ class CleanupSystem extends System {
 ### 1. Cache Collection References
 
 ```typescript
-// Good - Cache in init()
+// Good — cache in init()
 init() {
   this.players = this.getCollection("Players");
 }
 
-execute() {
-  for (const player of this.players) { /* ... */ }
-}
-
-// Bad - Fetch every frame
+// Bad — fetches every frame
 execute() {
   const players = this.getCollection("Players");
-  for (const player of players) { /* ... */ }
 }
 ```
 
@@ -650,13 +461,8 @@ execute() {
 
 ```typescript
 execute() {
-  // Skip if collection is empty
   if (this.enemies.size() === 0) return;
-
-  // Skip if not enough time passed
-  if (this.__kernox.dt < this.minFrameTime) return;
-
-  // Process...
+  // ...
 }
 ```
 
@@ -665,37 +471,13 @@ execute() {
 ```typescript
 class ExpensiveSystem extends System {
   private timer = 0;
-  private interval = 100;  // Run every 100ms
+  private interval = 100;
 
   execute() {
     this.timer += this.__kernox.dt;
-
     if (this.timer >= this.interval) {
       this.timer -= this.interval;
       this.doExpensiveWork();
-    }
-  }
-}
-```
-
-### 4. Spatial Partitioning
-
-For collision detection with many entities:
-
-```typescript
-class CollisionSystem extends System {
-  private grid = new SpatialGrid(64);  // 64px cells
-
-  execute() {
-    // Only check nearby entities
-    for (const entity of this.collidables) {
-      const nearby = this.grid.getNearby(entity.position);
-
-      for (const other of nearby) {
-        if (this.checkCollision(entity, other)) {
-          this.handleCollision(entity, other);
-        }
-      }
     }
   }
 }
@@ -705,54 +487,24 @@ class CollisionSystem extends System {
 
 ### 1. Single Responsibility
 
-Each system should handle one specific concern:
-
 ```typescript
-// Good - Focused systems
+// Good
 class MovementSystem extends System { /* Only movement */ }
 class RenderSystem extends System { /* Only rendering */ }
-class CollisionSystem extends System { /* Only collisions */ }
 
-// Avoid - God system
-class GameSystem extends System {
-  // Movement, rendering, collision, AI, everything...
-}
+// Avoid
+class GameSystem extends System { /* Everything */ }
 ```
 
-### 2. Use Events for Communication
-
-```typescript
-// Good - Systems communicate via events
-class SpawnSystem extends System {
-  execute() {
-    if (this.shouldSpawn()) {
-      const enemy = this.spawnEnemy();
-      this.dispatchEvent("enemySpawned", { enemy });
-    }
-  }
-}
-
-class ScoreSystem extends System {
-  init() {
-    this.attachToEvent("enemyKilled", this.onEnemyKilled.bind(this));
-  }
-
-  private onEnemyKilled(details: any) {
-    this.score += 100;
-  }
-}
-```
-
-### 3. Initialize in init()
+### 2. Initialize in init()
 
 ```typescript
 // Good
 init() {
   this.players = this.getCollection("Players");
-  this.attachToEvent("gameStart", this.onGameStart.bind(this));
 }
 
-// Avoid - Initialization in execute()
+// Avoid
 execute() {
   if (!this.initialized) {
     this.players = this.getCollection("Players");
@@ -761,37 +513,11 @@ execute() {
 }
 ```
 
-### 4. Keep execute() Fast
+### 3. Type Your Collections
 
 ```typescript
-// Good - Fast iteration
-execute() {
-  for (const entity of this.collection) {
-    entity.position.x += entity.velocity.x;
-  }
-}
-
-// Avoid - Heavy work every frame
-execute() {
-  for (const entity of this.collection) {
-    this.doComplexCalculation();     // Too slow!
-    this.loadResourceFromDisk();     // Way too slow!
-  }
-}
-```
-
-### 5. Type Your Collections
-
-```typescript
-// Good - Type safety
 init() {
   this.players = this.getCollection<ArrayList<Player>>("Players");
-}
-
-execute() {
-  for (const player of this.players) {
-    player.hp += 1;  // TypeScript knows about 'hp'
-  }
 }
 ```
 
@@ -807,16 +533,16 @@ execute() {
 ### Collection Not Found
 
 ```
-Error: Collection 'Players' was not found
+Error: Collection 'Players' is not registered.
 ```
 
-**Solution**: Ensure collection is registered before systems init.
+**Solution**: Ensure collection is registered before systems are initialized.
 
 ### Event Not Received
 
 **Check**:
 1. Is event name spelled correctly?
-2. Is event being dispatched in correct namespace?
+2. Is the listener registered with the correct namespace?
 3. Is handler bound correctly? Use `.bind(this)`
 
 ## Next Steps
