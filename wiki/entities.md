@@ -2,13 +2,13 @@
 
 ## Overview
 
-Entities are the fundamental objects in Kernox applications. They represent anything that exists in your application: players, enemies, projectiles, UI elements, etc. Unlike traditional OOP, entities in Kernox are data containers without behavior - all logic is handled by Systems.
+Entities are the fundamental objects in Kernox applications. They represent anything that exists in your application: players, enemies, projectiles, UI elements, etc. Unlike traditional OOP, entities in Kernox are data containers without behavior â€” all logic is handled by Systems.
 
 ## Entity Class
 
 The `Entity` class (`src/entity/Entity.ts`) is the base class for all entities. It provides:
 
-- **Unique ID**: Each entity has an auto-generated string ID
+- **Unique ID**: Each entity has an auto-generated numeric string ID
 - **Type**: The prototype name used to create the entity
 - **Collection membership**: Tracks which collections contain this entity
 - **Child entities**: Support for entity hierarchies
@@ -17,20 +17,22 @@ The `Entity` class (`src/entity/Entity.ts`) is the base class for all entities. 
 
 ```typescript
 class Entity {
-  get id(): string;              // Unique identifier
-  get type(): string;            // Prototype name
+  get id(): string;    // Unique identifier (numeric string, auto-incremented)
+  get type(): string;  // Prototype name used to create this entity
 
-  belongsTo(name: string): boolean;        // Check collection membership
-  collections(): Set<string>;               // Get all collections
+  belongsTo(collectionName: string): boolean;  // Check collection membership
+  collections(): Set<string>;                   // Get all collection names
 
-  linkTo(collectionName: string): void;     // Add to collection
-  unlinkFrom(collectionName: string): void; // Remove from collection
+  linkTo(collectionName: string): void;         // Register membership in a collection
+  unlinkFrom(collectionName: string): void;     // Remove membership from a collection
 
-  appendChild(name: string, child: Entity): void;  // Add child entity
-  getChild(name: string): Entity | undefined;      // Retrieve child
-  deleteChild(name: string): void;                  // Remove child
+  appendChild(name: string, child: Entity): void;  // Add child entity (throws if name already taken)
+  getChild(name: string): Entity | undefined;      // Retrieve child by name
+  deleteChild(name: string): void;                  // Remove child by name
 }
 ```
+
+**Note**: `appendChild` throws an error if a child with the given name already exists on that entity.
 
 ## Prototypes
 
@@ -44,9 +46,9 @@ Prototypes are templates that define entity types. They specify:
 
 ```typescript
 interface PrototypeSchema<T> {
-  name: string;                    // Unique type name
-  attributes: T;                    // Default attribute values
-  collections?: Set<string>;        // Collection names
+  name: string;                      // Unique type name
+  attributes: T;                     // Default attribute values
+  collections?: Set<string>;         // Collection names to assign entities to
   inherits?: PrototypeSchema<any>[]; // Parent prototypes
 }
 ```
@@ -140,11 +142,11 @@ const playerPrototype: PrototypeSchema<Player> = {
 
 ### Inheritance Resolution
 
-When multiple parent prototypes define the same attribute:
+When resolving attributes across parent prototypes:
 
-1. Child prototype attributes take precedence
-2. Later parents override earlier parents
-3. All collections from parents are merged with the child's collections
+1. **Child prototype attributes always take precedence** over any parent
+2. **Earlier parents (lower index) take precedence** over later parents â€” `inherits: [A, B]` means A's attributes win over B's when both define the same key
+3. **All collections** from all parents are merged with the child's collections
 
 ## Registering Prototypes
 
@@ -176,7 +178,7 @@ const gameAddon: KernoAddon = {
   ]
 };
 
-app.use(gameAddon);  // Automatically registers all prototypes
+app.use(gameAddon);  // Automatically registers all prototypes under "myGame" namespace
 ```
 
 ## Creating Entities
@@ -189,13 +191,15 @@ Once a prototype is registered, create entities using the EntityFactory:
 // Create with default values
 const player = app.entityFactory.create("Player");
 
-// Create with custom values
+// Create with custom values (only keys that already exist on the entity are applied)
 const player = app.entityFactory.create("Player", {
   hp: 150,
   level: 5,
   name: "Hero"
 });
 ```
+
+**Note**: The `params` object only applies values for keys that already exist on the entity (from the prototype) and that don't contain `"_"` in their name. Unknown keys are silently ignored.
 
 ### With Namespaces
 
@@ -205,7 +209,7 @@ If using namespaced addons:
 // Explicit namespace
 const player = app.entityFactory.create("myGame.Player", { hp: 150 });
 
-// Implicit namespace (works if unambiguous)
+// Implicit namespace (works if unambiguous across all loaded addons)
 const player = app.entityFactory.create("Player", { hp: 150 });
 ```
 
@@ -232,45 +236,50 @@ console.log(player.level); // TypeScript knows this is a number
 
 When entities are created, all attributes are **deep-copied** from the prototype. This means:
 
-- Primitive values are copied
-- Objects are recursively cloned
+- Primitive values are copied by value
+- Plain objects are recursively cloned
 - Arrays are cloned
-- Class instances are instantiated and cloned
+- Class instances are instantiated via their constructor and then deep-copied
 
 This ensures entities don't share references:
 
 ```typescript
-const prototype: PrototypeSchema<any> = {
-  name: "Test",
-  attributes: {
-    position: { x: 0, y: 0 }
-  }
-};
-
-app.entityFactory.prototype(prototype);
-
 const entity1 = app.entityFactory.create("Test");
 const entity2 = app.entityFactory.create("Test");
 
 entity1.position.x = 10;
-console.log(entity2.position.x); // Still 0, not 10
+console.log(entity2.position.x); // Still 0 â€” separate copy
 ```
 
 ## Entity Lifecycle
 
 ```
 1. Prototype Definition
-   “
+   â†“
 2. Registration (entityFactory.prototype())
-   “
+   â†“
 3. Entity Creation (entityFactory.create())
-   “
+   â†“
 4. Automatic Collection Assignment
-   “
+   â†“
 5. Processing by Systems
-   “
-6. Optional: Rest/Pooling (sendToRest())
+   â†“
+6. Optional: Pooling (entityFactory.sendToRest())
 ```
+
+## Entity Pooling
+
+To avoid repeated allocation, entities can be returned to a per-type pool and reused:
+
+```typescript
+// Return entity to pool â€” removes it from all collections
+app.entityFactory.sendToRest(entity);
+
+// Next create() call for the same type will reuse the pooled entity
+const reused = app.entityFactory.create("Enemy");
+```
+
+When a pooled entity is reused, its state is reset to the prototype's default values before `params` are applied.
 
 ## Working with Entities
 
@@ -281,8 +290,8 @@ const player = app.entityFactory.create<Player>("Player");
 
 // Read properties
 console.log(player.hp);
-console.log(player.id);
-console.log(player.type);
+console.log(player.id);    // e.g. "0", "1", "2" ...
+console.log(player.type);  // "Player" or "myGame.Player"
 
 // Modify properties
 player.hp -= 10;
@@ -293,17 +302,13 @@ player.level += 1;
 
 ```typescript
 // Check if entity belongs to a collection
-if (player.belongsTo("Players")) {
+if (player.belongsTo("myGame.Players")) {
   console.log("Entity is a player");
 }
 
-// Get all collections
-const collections = player.collections();
-console.log(Array.from(collections)); // ["Players", "Kinetics", "Renderables"]
-
-// Manually manage collection membership (usually not needed)
-player.linkTo("SpecialEntities");
-player.unlinkFrom("Renderables");
+// Get all collections this entity belongs to
+const cols = player.collections();
+console.log(Array.from(cols)); // e.g. ["myGame.Players", "myGame.Kinetics"]
 ```
 
 ### Entity Hierarchies
@@ -314,7 +319,7 @@ Create parent-child relationships:
 const player = app.entityFactory.create("Player");
 const weapon = app.entityFactory.create("Weapon");
 
-// Attach weapon as child
+// Attach weapon as child (throws if "weapon" name already taken)
 player.appendChild("weapon", weapon);
 
 // Access child
@@ -381,10 +386,6 @@ Use clear, descriptive names:
 // Good
 const playerPrototype: PrototypeSchema<Player> = { name: "Player", /* ... */ };
 const enemyPrototype: PrototypeSchema<Enemy> = { name: "Enemy", /* ... */ };
-
-// Avoid
-const p1 = { name: "P1", /* ... */ };
-const thing = { name: "Thing", /* ... */ };
 ```
 
 ### 5. Default Values
@@ -395,17 +396,17 @@ Provide sensible defaults in prototypes:
 const bulletPrototype: PrototypeSchema<Bullet> = {
   name: "Bullet",
   attributes: {
-    speed: 500,        // Pixels per second
-    damage: 10,        // Damage points
-    lifetime: 3000,    // Milliseconds
-    active: true       // Initial state
+    speed: 500,
+    damage: 10,
+    lifetime: 3000,
+    active: true
   }
 };
 ```
 
 ## Common Patterns
 
-### Factory Pattern
+### Factory Function
 
 Create specialized factory functions:
 
@@ -417,36 +418,6 @@ function createEnemy(x: number, y: number, level: number) {
     damage: 5 * level,
     level
   });
-}
-
-const enemy = createEnemy(100, 200, 3);
-```
-
-### Entity Pools
-
-For frequently created/destroyed entities:
-
-```typescript
-class BulletPool {
-  private pool: Bullet[] = [];
-
-  acquire(x: number, y: number): Bullet {
-    if (this.pool.length > 0) {
-      const bullet = this.pool.pop()!;
-      bullet.position.x = x;
-      bullet.position.y = y;
-      bullet.active = true;
-      return bullet;
-    }
-    return app.entityFactory.create<Bullet>("Bullet", {
-      position: { x, y }
-    });
-  }
-
-  release(bullet: Bullet): void {
-    bullet.active = false;
-    this.pool.push(bullet);
-  }
 }
 ```
 
@@ -470,9 +441,9 @@ Error: Ambiguous entity type 'Player' was requested
 
 ### Shared References
 
-If entities share object references (shouldn't happen):
+If entities unexpectedly share object references:
 
-**Check**: Ensure you're using the EntityFactory's `create()` method, which performs deep copying.
+**Check**: Ensure you're using `entityFactory.create()`, which performs deep copying. Do not manually assign prototype attribute objects to entities.
 
 ## Next Steps
 

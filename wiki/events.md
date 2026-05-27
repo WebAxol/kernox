@@ -28,17 +28,17 @@ type EventHandler = (event: any) => void;
 
 ### From Systems
 
-Systems use the `dispatchEvent()` method:
+Systems use the `dispatchEvent()` method, which passes the event name **as-is** to the EventBroker — no namespace is prepended automatically:
 
 ```typescript
 class CombatSystem extends System {
   execute() {
     for (const enemy of this.enemies) {
       if (enemy.hp <= 0) {
+        // Dispatches the literal string "enemyKilled"
         this.dispatchEvent("enemyKilled", {
           enemy: enemy,
-          position: enemy.position,
-          score: enemy.scoreValue
+          position: enemy.position
         });
 
         this.enemies.remove(enemy);
@@ -48,23 +48,25 @@ class CombatSystem extends System {
 }
 ```
 
-### From Kernox Instance
+To target a specific addon's listeners, use an explicit namespace:
 
-Directly from the EventBroker:
+```typescript
+this.dispatchEvent("myAddon.enemyKilled", { enemy });
+```
+
+### From the EventBroker Directly
 
 ```typescript
 const app = new Kernox();
 
-// Dispatch a global event
 app.eventBroker.dispatch("gameStart", {
-  difficulty: "hard",
-  playerName: "Hero"
+  difficulty: "hard"
 });
 ```
 
 ### Event Payload
 
-Events can carry any data in the `details` parameter:
+Events can carry any data in the second parameter:
 
 ```typescript
 // Simple value
@@ -75,7 +77,6 @@ this.dispatchEvent("playerHit", {
   player: playerEntity,
   damage: 25,
   source: enemyEntity,
-  timestamp: Date.now(),
   critical: true
 });
 
@@ -87,28 +88,26 @@ this.dispatchEvent("gameOver", {});
 
 ### In Systems
 
-Use `attachToEvent()` in the `init()` method:
+Use `attachToEvent()` in the `init()` method. The system's addon namespace is prepended automatically unless you provide an explicit `namespace.name` form:
 
 ```typescript
 class ScoreSystem extends System {
   private score = 0;
 
   init() {
-    // Attach listeners
+    // Registers as "myAddon.enemyKilled"
     this.attachToEvent("enemyKilled", this.onEnemyKilled.bind(this));
     this.attachToEvent("itemCollected", this.onItemCollected.bind(this));
   }
 
   private onEnemyKilled(details: any) {
-    this.score += details.score;
-    console.log(`Score: ${this.score}`);
-
-    this.dispatchEvent("scoreChanged", { score: this.score });
+    this.score += 100;
+    this.__kernox.eventBroker.dispatch("scoreChanged", { score: this.score });
   }
 
   private onItemCollected(details: any) {
     this.score += details.value;
-    this.dispatchEvent("scoreChanged", { score: this.score });
+    this.__kernox.eventBroker.dispatch("scoreChanged", { score: this.score });
   }
 }
 ```
@@ -118,93 +117,85 @@ class ScoreSystem extends System {
 Always use `.bind(this)` when passing methods as event handlers:
 
 ```typescript
-// Good - 'this' context is preserved
+// Good — 'this' context is preserved
 this.attachToEvent("gameStart", this.onGameStart.bind(this));
 
-// Bad - 'this' will be undefined in the handler
+// Bad — 'this' will be undefined in the handler
 this.attachToEvent("gameStart", this.onGameStart);
 
-// Alternative - Arrow function
+// Alternative — arrow function
 this.attachToEvent("gameStart", (details) => {
   this.onGameStart(details);
 });
 ```
 
-### From EventBroker
-
-Subscribe directly:
+### From the EventBroker Directly
 
 ```typescript
 const app = new Kernox();
 
 app.eventBroker.attachToEvent("playerDied", (details) => {
   console.log("Player died!", details);
-  // Show game over screen
 });
 ```
 
 ## Namespace Resolution
 
-Events support namespaces to prevent conflicts between addons.
+### How Namespaces Work for Listeners
+
+When a system calls `attachToEvent("eventName", handler)`, the system's addon namespace is prepended, storing the listener under `"addonName.eventName"`.
+
+When a system calls `dispatchEvent("eventName", details)`, the name is passed **as-is** to `EventBroker.dispatch()`. The broker first looks for an exact match. If none is found, it searches all registered namespaces for `"namespace.eventName"` — if exactly one match exists, it is used. If multiple matches exist, an ambiguity error is thrown.
+
+This means:
+
+```typescript
+// In "gameAddon" system:
+this.attachToEvent("playerJump", handler);
+// Listener stored as: "gameAddon.playerJump"
+
+this.dispatchEvent("playerJump", {});
+// Dispatches literal "playerJump"
+// EventBroker finds no exact match, resolves to "gameAddon.playerJump" (if unambiguous)
+```
 
 ### Explicit Namespace
 
+Use explicit namespaces to be unambiguous:
+
 ```typescript
-// Dispatch with namespace
+// Dispatch to a specific namespace
 this.dispatchEvent("myAddon.playerJump", { height: 10 });
 
-// Listen with namespace
+// Listen to a specific namespace
 this.attachToEvent("otherAddon.enemySpawned", this.onSpawn.bind(this));
-```
-
-### Implicit Namespace
-
-Systems automatically use their addon's context:
-
-```typescript
-// In a system from "gameAddon"
-this.dispatchEvent("playerJump", {});
-// Actually dispatches: "gameAddon.playerJump"
-
-this.attachToEvent("playerJump", handler);
-// Actually listens to: "gameAddon.playerJump"
 ```
 
 ### Cross-Addon Communication
 
-Listen to events from other addons using explicit namespaces:
-
 ```typescript
-// In "physics" addon
 class PhysicsSystem extends System {
   init() {
-    // Listen to event from "game" addon
+    // Listen to event from "game" addon explicitly
     this.attachToEvent("game.collision", this.onCollision.bind(this));
-  }
-
-  private onCollision(details: any) {
-    // React to collision from game addon
-    this.applyImpact(details.entity, details.force);
   }
 }
 ```
 
 ### Ambiguous Events
 
-If multiple addons define the same event name, you must use explicit namespaces:
+If multiple addons have listeners registered under the same base event name, dispatching without a namespace throws:
 
+```
+Error: Ambiguous event 'shoot' was requested: a namespace must be specified before it
+```
+
+**Solution**: Use explicit namespace when dispatching:
 ```typescript
-// Error: Multiple addons have "shoot" event
-this.attachToEvent("shoot", handler);
-
-// Fixed: Use explicit namespace
-this.attachToEvent("player.shoot", handler);
-this.attachToEvent("enemy.shoot", handler);
+this.dispatchEvent("player.shoot", {});
 ```
 
 ## Built-in Events
-
-Kernox dispatches some events automatically:
 
 ### `__start`
 
@@ -221,38 +212,9 @@ class GameSystem extends System {
 }
 ```
 
-### Custom Built-ins
-
-You can create your own lifecycle events:
-
-```typescript
-class GameStateSystem extends System {
-  private state = "menu";
-
-  init() {
-    // Listen to start event
-    this.attachToEvent("__start", () => {
-      this.dispatchEvent("gameReady", {});
-    });
-  }
-
-  startGame() {
-    this.state = "playing";
-    this.dispatchEvent("gameStarted", {});
-  }
-
-  endGame() {
-    this.state = "gameOver";
-    this.dispatchEvent("gameEnded", { score: this.score });
-  }
-}
-```
-
 ## Common Event Patterns
 
 ### Pattern 1: Event Chain
-
-One event triggers another:
 
 ```typescript
 class SpawnSystem extends System {
@@ -261,38 +223,24 @@ class SpawnSystem extends System {
   }
 
   private onEnemyKilled(details: any) {
-    // Spawn power-up when enemy dies
     if (Math.random() < 0.3) {
       const powerUp = this.spawnPowerUp(details.position);
-      this.dispatchEvent("powerUpSpawned", { powerUp });
+      this.__kernox.eventBroker.dispatch("powerUpSpawned", { powerUp });
     }
-  }
-}
-
-class EffectsSystem extends System {
-  init() {
-    this.attachToEvent("powerUpSpawned", this.onPowerUpSpawned.bind(this));
-  }
-
-  private onPowerUpSpawned(details: any) {
-    // Create visual effect
-    this.createSparkles(details.powerUp.position);
   }
 }
 ```
 
 ### Pattern 2: State Changes
 
-Notify state transitions:
-
 ```typescript
 class PlayerSystem extends System {
-  private health = 100;
+  private wasAlive = true;
 
   execute() {
-    if (this.health <= 0 && this.wasAlive) {
+    if (this.player.hp <= 0 && this.wasAlive) {
       this.wasAlive = false;
-      this.dispatchEvent("playerDied", {
+      this.__kernox.eventBroker.dispatch("playerDied", {
         position: this.player.position
       });
     }
@@ -306,19 +254,9 @@ class UISystem extends System {
     });
   }
 }
-
-class AudioSystem extends System {
-  init() {
-    this.attachToEvent("playerDied", () => {
-      this.playSound("death");
-    });
-  }
-}
 ```
 
 ### Pattern 3: Command Pattern
-
-Use events as commands:
 
 ```typescript
 class InputSystem extends System {
@@ -326,13 +264,10 @@ class InputSystem extends System {
     window.addEventListener("keydown", (e) => {
       switch (e.key) {
         case " ":
-          this.dispatchEvent("shoot", {});
-          break;
-        case "r":
-          this.dispatchEvent("reload", {});
+          this.__kernox.eventBroker.dispatch("shoot", {});
           break;
         case "Escape":
-          this.dispatchEvent("pause", {});
+          this.__kernox.eventBroker.dispatch("pause", {});
           break;
       }
     });
@@ -342,7 +277,6 @@ class InputSystem extends System {
 class WeaponSystem extends System {
   init() {
     this.attachToEvent("shoot", this.shoot.bind(this));
-    this.attachToEvent("reload", this.reload.bind(this));
   }
 
   private shoot(details: any) {
@@ -351,61 +285,18 @@ class WeaponSystem extends System {
       this.createBullet();
     }
   }
-
-  private reload(details: any) {
-    this.ammo = this.maxAmmo;
-    this.dispatchEvent("reloadComplete", {});
-  }
 }
 ```
 
 ### Pattern 4: Aggregation
 
-Collect data from multiple systems:
-
 ```typescript
 class StatsSystem extends System {
-  private stats = {
-    enemiesKilled: 0,
-    itemsCollected: 0,
-    damageTaken: 0
-  };
+  private stats = { enemiesKilled: 0, damageTaken: 0 };
 
   init() {
     this.attachToEvent("enemyKilled", () => this.stats.enemiesKilled++);
-    this.attachToEvent("itemCollected", () => this.stats.itemsCollected++);
     this.attachToEvent("playerHit", (d) => this.stats.damageTaken += d.damage);
-
-    this.attachToEvent("gameOver", () => {
-      this.dispatchEvent("finalStats", { stats: this.stats });
-    });
-  }
-}
-```
-
-### Pattern 5: Event Queue
-
-Defer processing to next frame:
-
-```typescript
-class EventQueueSystem extends System {
-  private queue: Array<{ event: string; details: any }> = [];
-
-  init() {
-    this.attachToEvent("deferredAction", (details) => {
-      this.queue.push({
-        event: details.eventName,
-        details: details.data
-      });
-    });
-  }
-
-  execute() {
-    // Process all queued events
-    while (this.queue.length > 0) {
-      const { event, details } = this.queue.shift()!;
-      this.dispatchEvent(event, details);
-    }
   }
 }
 ```
@@ -414,287 +305,68 @@ class EventQueueSystem extends System {
 
 ### 1. Descriptive Names
 
-Use clear, action-based names:
-
 ```typescript
 // Good
 this.dispatchEvent("playerJumped", {});
 this.dispatchEvent("enemySpawned", {});
-this.dispatchEvent("itemCollected", {});
-this.dispatchEvent("gameOver", {});
 
 // Avoid
 this.dispatchEvent("update", {});
-this.dispatchEvent("thing", {});
 this.dispatchEvent("event1", {});
 ```
 
 ### 2. Include Relevant Data
 
-Provide all necessary information:
-
 ```typescript
-// Good - Complete information
+// Good
 this.dispatchEvent("entityDamaged", {
   entity: target,
   damage: amount,
-  source: attacker,
-  damageType: "fire",
-  critical: isCritical
+  source: attacker
 });
 
-// Bad - Insufficient data
+// Bad
 this.dispatchEvent("damaged", { amount: 10 });
 ```
 
-### 3. Document Events
-
-Comment your events:
-
-```typescript
-/**
- * Fired when a player collects an item
- * @event itemCollected
- * @param {Entity} player - The player entity
- * @param {Entity} item - The collected item
- * @param {string} itemType - Type of item collected
- * @param {number} value - Point value of the item
- */
-this.dispatchEvent("itemCollected", {
-  player,
-  item,
-  itemType: item.type,
-  value: item.points
-});
-```
-
-### 4. Avoid Over-Dispatching
+### 3. Avoid Over-Dispatching
 
 Don't fire events every frame unless necessary:
 
 ```typescript
-// Bad - Fires every frame
+// Bad — fires every frame
 execute() {
   this.dispatchEvent("playerMoved", { position: this.player.position });
 }
 
-// Good - Only when significant
+// Better — other systems can read player.position directly
 execute() {
-  if (this.player.position.x !== this.lastX) {
-    this.dispatchEvent("playerMoved", { position: this.player.position });
-    this.lastX = this.player.position.x;
-  }
-}
-
-// Better - Use direct access instead
-execute() {
-  // Other systems can just read player.position directly
   this.player.position.x += this.player.velocity.x;
 }
 ```
 
-### 5. Type-Safe Events
+### 4. Prefer Explicit Namespaces When Dispatching
 
-Define event types for TypeScript:
+Since `dispatchEvent()` does not prepend a namespace, using explicit namespaces avoids ambiguity errors when multiple addons are loaded:
 
 ```typescript
-// Event type definitions
-type GameEvents = {
-  playerDied: { player: Player; position: Vector2D };
-  enemyKilled: { enemy: Enemy; score: number };
-  itemCollected: { item: Item; player: Player };
-};
-
-// Type-safe dispatch
-class CombatSystem extends System {
-  private dispatchTypedEvent<K extends keyof GameEvents>(
-    event: K,
-    details: GameEvents[K]
-  ) {
-    this.dispatchEvent(event, details);
-  }
-
-  execute() {
-    // TypeScript will check the details object
-    this.dispatchTypedEvent("enemyKilled", {
-      enemy: enemyEntity,
-      score: 100
-    });
-  }
-}
+// Safer in multi-addon apps
+this.dispatchEvent("myAddon.enemyKilled", { enemy });
 ```
 
 ## Performance Considerations
 
-### Event Overhead
-
-Events have minimal overhead, but consider:
+Events have minimal overhead, but avoid dispatching inside tight per-entity loops:
 
 ```typescript
-// Fast - Few listeners, infrequent events
-this.dispatchEvent("gameOver", {});
-
-// Slower - Many listeners, every frame
+// Avoid — dispatches once per entity per frame
 for (const entity of this.entities) {
-  this.dispatchEvent("entityUpdate", { entity });  // Avoid!
-}
-```
-
-### Event Listener Count
-
-Keep listener count reasonable:
-
-```typescript
-// Good - Few targeted listeners
-this.attachToEvent("playerDied", handler1);
-this.attachToEvent("enemySpawned", handler2);
-
-// Bad - Hundreds of listeners
-for (let i = 0; i < 1000; i++) {
-  this.attachToEvent("update", handlers[i]);  // Too many!
-}
-```
-
-### Memory Leaks
-
-Event handlers are stored as references. Systems are typically long-lived, so this isn't usually an issue. But be careful with dynamic systems:
-
-```typescript
-// If you create/destroy systems dynamically, handlers remain
-// For long-running apps, consider implementing detachFromEvent()
-```
-
-## Debugging Events
-
-### Log Events
-
-```typescript
-class DebugSystem extends System {
-  init() {
-    const events = [
-      "playerDied",
-      "enemyKilled",
-      "itemCollected",
-      "gameOver"
-    ];
-
-    for (const event of events) {
-      this.attachToEvent(event, (details) => {
-        console.log(`[Event] ${event}`, details);
-      });
-    }
-  }
-}
-```
-
-### Event Monitor
-
-```typescript
-class EventMonitorSystem extends System {
-  private eventLog: Array<{ event: string; details: any; time: number }> = [];
-
-  init() {
-    // Monkey-patch dispatch to log all events
-    const original = this.__kernox.eventBroker.dispatch.bind(
-      this.__kernox.eventBroker
-    );
-
-    this.__kernox.eventBroker.dispatch = (event: string, details: any) => {
-      this.eventLog.push({
-        event,
-        details,
-        time: Date.now()
-      });
-
-      return original(event, details);
-    };
-  }
-
-  getLog() {
-    return this.eventLog;
-  }
-}
-```
-
-## Comparison with Direct Calls
-
-### Using Events (Decoupled)
-
-```typescript
-class CombatSystem extends System {
-  execute() {
-    if (enemy.hp <= 0) {
-      // Don't know who's listening, don't care
-      this.dispatchEvent("enemyKilled", { enemy });
-    }
-  }
+  this.dispatchEvent("entityUpdate", { entity });
 }
 
-class ScoreSystem extends System {
-  init() {
-    this.attachToEvent("enemyKilled", (d) => this.score += 100);
-  }
-}
-
-class QuestSystem extends System {
-  init() {
-    this.attachToEvent("enemyKilled", (d) => this.checkQuests(d.enemy));
-  }
-}
-
-// Easy to add more systems that react to enemy deaths
-```
-
-### Direct Calls (Coupled)
-
-```typescript
-class CombatSystem extends System {
-  constructor(
-    kernox: Kernox,
-    private scoreSystem: ScoreSystem,  // Tight coupling
-    private questSystem: QuestSystem   // Tight coupling
-  ) {
-    super(kernox, "game");
-  }
-
-  execute() {
-    if (enemy.hp <= 0) {
-      // Must know about all dependent systems
-      this.scoreSystem.addScore(100);
-      this.questSystem.checkQuest(enemy);
-    }
-  }
-}
-
-// Hard to add new systems without modifying CombatSystem
-```
-
-## When to Use Events vs. Direct Access
-
-### Use Events For:
-
-- Cross-system notifications
-- One-to-many communication
-- State change announcements
-- Decoupled architectures
-- Plugin systems
-
-### Use Direct Access For:
-
-- Reading entity properties
-- Accessing collections
-- Performance-critical paths
-- Frame-by-frame updates
-
-```typescript
-// Events - Good for notifications
-this.dispatchEvent("playerDied", { player });
-
-// Direct access - Good for continuous updates
-execute() {
-  for (const entity of this.kinetics) {
-    entity.position.x += entity.velocity.x;  // Direct access
-  }
+// Better — process entities directly
+for (const entity of this.entities) {
+  entity.position.x += entity.velocity.x;
 }
 ```
 
@@ -703,10 +375,10 @@ execute() {
 ### Event Not Received
 
 **Check**:
-1. Event name spelling matches
+1. Event name spelling matches exactly
 2. Handler is bound: `.bind(this)`
-3. Listener attached before event dispatched
-4. Namespaces match (or use explicit namespace)
+3. Listener is attached before the event is dispatched
+4. Namespaces are consistent — remember `attachToEvent` prepends the addon namespace, but `dispatchEvent` does not
 
 ### Handler 'this' is undefined
 
@@ -724,9 +396,9 @@ this.attachToEvent("test", this.handler.bind(this));
 Error: Ambiguous event 'shoot' was requested
 ```
 
-**Solution**: Use explicit namespace:
+**Solution**: Use an explicit namespace when dispatching:
 ```typescript
-this.attachToEvent("player.shoot", handler);
+this.dispatchEvent("player.shoot", {});
 ```
 
 ## Next Steps
