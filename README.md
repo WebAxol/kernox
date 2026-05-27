@@ -206,20 +206,14 @@ class RenderSystem extends System {
 Decouple communication between systems:
 
 ```typescript
-// Define event
-interface PlayerDiedEvent {
-  playerId: string;
-  position: { x: number; y: number };
-}
-
-// Emit event
-this.__kernox.eventBroker.emit<PlayerDiedEvent>("player:died", {
+// Dispatch an event
+this.__kernox.eventBroker.dispatch("playerDied", {
   playerId: player.id,
   position: player.position
 });
 
-// Subscribe to event
-this.__kernox.eventBroker.subscribe<PlayerDiedEvent>("player:died", (data) => {
+// Subscribe to an event
+this.__kernox.eventBroker.attachToEvent("playerDied", (data) => {
   console.log(`Player ${data.playerId} died at`, data.position);
   this.spawnExplosion(data.position);
 });
@@ -295,9 +289,6 @@ app.use(gameAddon);
 
 // Start execution loop
 app.execute();
-
-// Stop execution
-app.stop();
 ```
 
 ## Demo
